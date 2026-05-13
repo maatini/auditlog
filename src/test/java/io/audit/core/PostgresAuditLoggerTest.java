@@ -511,4 +511,54 @@ class PostgresAuditLoggerTest {
         assertTrue(errors.get(0).getMessage().contains("Backpressure"));
     }
 
+    @Test
+    @DisplayName("builder creates logger with dataSource only")
+    void builder_withDataSource() throws Exception {
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
+
+        var logger = PostgresAuditLogger.builder()
+                .dataSource(dataSource)
+                .build();
+        logger.log(validEntry).join();
+        verify(preparedStatement).executeUpdate();
+        logger.close();
+    }
+
+    @Test
+    @DisplayName("builder creates logger with all optional fields")
+    void builder_withAllFields() throws Exception {
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
+
+        var executor = (Executor) command -> command.run();
+        var mapper = new ObjectMapper();
+        var logger = PostgresAuditLogger.builder()
+                .dataSource(dataSource)
+                .executor(executor)
+                .objectMapper(mapper)
+                .maxConcurrency(5)
+                .backpressurePolicy(PostgresAuditLogger.BackpressurePolicy.BLOCK)
+                .build();
+        logger.log(validEntry).join();
+        verify(preparedStatement).executeUpdate();
+        logger.close();
+    }
+
+    @Test
+    @DisplayName("builder rejects null dataSource")
+    void builder_rejectsNullDataSource() {
+        assertThrows(NullPointerException.class,
+                () -> PostgresAuditLogger.builder().build());
+    }
+
+    @Test
+    @DisplayName("builder uses virtual thread executor by default")
+    void builder_usesDefaultExecutor() {
+        var logger = PostgresAuditLogger.builder()
+                .dataSource(dataSource)
+                .build();
+        assertNotNull(logger);
+        logger.close();
+    }
 }

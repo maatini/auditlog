@@ -46,6 +46,11 @@ public final class PostgresAuditLoggers {
     }
 
     private static HikariDataSource createDataSource(String jdbcUrl, String username, String password) {
+        return createDataSource(jdbcUrl, username, password, 0);
+    }
+
+    private static HikariDataSource createDataSource(String jdbcUrl, String username, String password,
+                                                     int initializationFailTimeout) {
         HikariConfig config = new HikariConfig();
         config.setJdbcUrl(jdbcUrl);
         config.setUsername(username);
@@ -53,7 +58,7 @@ public final class PostgresAuditLoggers {
         config.setMaximumPoolSize(5);
         config.setMinimumIdle(1);
         config.setPoolName("audit-log-pool");
-        config.setInitializationFailTimeout(0);
+        config.setInitializationFailTimeout(initializationFailTimeout);
         return new HikariDataSource(config);
     }
 
@@ -82,6 +87,7 @@ public final class PostgresAuditLoggers {
         private Executor executor;
         private ObjectMapper objectMapper;
         private int maxConcurrency;
+        private int initializationFailTimeout;
         private PostgresAuditLogger.BackpressurePolicy backpressurePolicy;
         private Consumer<AuditLoggingException> errorCallback;
 
@@ -163,6 +169,16 @@ public final class PostgresAuditLoggers {
         }
 
         /**
+         * Setzt das Initialisierungs-Timeout für den HikariCP-Pool in Millisekunden.
+         * Default: 0 (kein Fail-Fast — Pool startet auch ohne DB).
+         * Auf {@code -1} setzen, um bei nicht erreichbarer DB sofort zu scheitern.
+         */
+        public Builder initializationFailTimeout(int timeoutMs) {
+            this.initializationFailTimeout = timeoutMs;
+            return this;
+        }
+
+        /**
          * Setzt die Backpressure-Policy (Default: {@link PostgresAuditLogger.BackpressurePolicy#BLOCK}).
          * Wirkt nur, wenn {@code maxConcurrency > 0} gesetzt ist.
          */
@@ -196,7 +212,7 @@ public final class PostgresAuditLoggers {
             config.setMaximumPoolSize(maximumPoolSize);
             config.setMinimumIdle(minimumIdle);
             config.setPoolName(poolName);
-            config.setInitializationFailTimeout(0);
+            config.setInitializationFailTimeout(initializationFailTimeout);
             var dataSource = new HikariDataSource(config);
 
             var exec = executor != null ? executor : PostgresAuditLogger.DEFAULT_EXECUTOR;

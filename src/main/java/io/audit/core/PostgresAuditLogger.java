@@ -78,62 +78,62 @@ public class PostgresAuditLogger implements AuditLogger {
         this(dataSource, DEFAULT_EXECUTOR, false, false, OBJECT_MAPPER, null, null, null);
     }
 
+    /**
+     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
+     *             {@link Builder#executor(Executor)} instead.
+     */
+    @Deprecated(forRemoval = false)
     public PostgresAuditLogger(DataSource dataSource, Executor executor) {
         this(dataSource, executor, false, false, OBJECT_MAPPER, null, null, null);
     }
 
     /**
-     * Erzeugt einen Logger mit benutzerdefiniertem ObjectMapper.
-     *
-     * @param dataSource   die DataSource
-     * @param objectMapper konfigurierter ObjectMapper (z.&#8239;B. mit eigenen Modulen)
+     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
+     *             {@link Builder#objectMapper(ObjectMapper)} instead.
      */
+    @Deprecated(forRemoval = false)
     public PostgresAuditLogger(DataSource dataSource, ObjectMapper objectMapper) {
         this(dataSource, DEFAULT_EXECUTOR, false, false, objectMapper, null, null, null);
     }
 
     /**
-     * Erzeugt einen Logger mit benutzerdefiniertem Executor und ObjectMapper.
-     *
-     * @param dataSource   die DataSource
-     * @param executor     Executor für asynchrone Ausführung
-     * @param objectMapper konfigurierter ObjectMapper
+     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
+     *             {@link Builder#executor(Executor)} and
+     *             {@link Builder#objectMapper(ObjectMapper)} instead.
      */
+    @Deprecated(forRemoval = false)
     public PostgresAuditLogger(DataSource dataSource, Executor executor, ObjectMapper objectMapper) {
         this(dataSource, executor, false, false, objectMapper, null, null, null);
     }
 
     /**
-     * Erzeugt einen Logger mit Backpressure-Steuerung (Default-Policy: BLOCK).
-     *
-     * @param dataSource      die DataSource
-     * @param maxConcurrency  maximale Anzahl gleichzeitiger Log-Vorgänge
+     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
+     *             {@link Builder#maxConcurrency(int)} instead.
      */
+    @Deprecated(forRemoval = false)
     public PostgresAuditLogger(DataSource dataSource, int maxConcurrency) {
         this(dataSource, DEFAULT_EXECUTOR, false, false, OBJECT_MAPPER,
                 new Semaphore(maxConcurrency), BackpressurePolicy.BLOCK, null);
     }
 
     /**
-     * Erzeugt einen Logger mit Backpressure-Steuerung und konfigurierbarer Policy.
-     *
-     * @param dataSource          die DataSource
-     * @param maxConcurrency      maximale Anzahl gleichzeitiger Log-Vorgänge
-     * @param backpressurePolicy  Verhalten bei erschöpftem Semaphor
+     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
+     *             {@link Builder#maxConcurrency(int)} and
+     *             {@link Builder#backpressurePolicy(BackpressurePolicy)} instead.
      */
+    @Deprecated(forRemoval = false)
     public PostgresAuditLogger(DataSource dataSource, int maxConcurrency, BackpressurePolicy backpressurePolicy) {
         this(dataSource, DEFAULT_EXECUTOR, false, false, OBJECT_MAPPER,
                 new Semaphore(maxConcurrency), backpressurePolicy, null);
     }
 
     /**
-     * Erzeugt einen Logger mit Backpressure-Steuerung, Policy und Error-Callback.
-     *
-     * @param dataSource          die DataSource
-     * @param maxConcurrency      maximale Anzahl gleichzeitiger Log-Vorgänge
-     * @param backpressurePolicy  Verhalten bei erschöpftem Semaphor
-     * @param errorCallback       Callback für asynchrone Fehler (Fire-and-Forget)
+     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
+     *             {@link Builder#maxConcurrency(int)},
+     *             {@link Builder#backpressurePolicy(BackpressurePolicy)} and
+     *             {@link Builder#errorCallback(Consumer)} instead.
      */
+    @Deprecated(forRemoval = false)
     public PostgresAuditLogger(DataSource dataSource, int maxConcurrency, BackpressurePolicy backpressurePolicy,
                                Consumer<AuditLoggingException> errorCallback) {
         this(dataSource, DEFAULT_EXECUTOR, false, false, OBJECT_MAPPER,
@@ -141,14 +141,13 @@ public class PostgresAuditLogger implements AuditLogger {
     }
 
     /**
-     * Erzeugt einen Logger mit benutzerdefiniertem Executor, Backpressure, Policy und Error-Callback.
-     *
-     * @param dataSource          die DataSource
-     * @param executor            Executor für asynchrone Ausführung
-     * @param maxConcurrency      maximale Anzahl gleichzeitiger Log-Vorgänge
-     * @param backpressurePolicy  Verhalten bei erschöpftem Semaphor
-     * @param errorCallback       Callback für asynchrone Fehler (Fire-and-Forget)
+     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
+     *             {@link Builder#executor(Executor)},
+     *             {@link Builder#maxConcurrency(int)},
+     *             {@link Builder#backpressurePolicy(BackpressurePolicy)} and
+     *             {@link Builder#errorCallback(Consumer)} instead.
      */
+    @Deprecated(forRemoval = false)
     public PostgresAuditLogger(DataSource dataSource, Executor executor, int maxConcurrency,
                                BackpressurePolicy backpressurePolicy,
                                Consumer<AuditLoggingException> errorCallback) {
@@ -186,6 +185,82 @@ public class PostgresAuditLogger implements AuditLogger {
         BLOCK,
         /** Aufrufer erhält sofort eine fehlgeschlagene {@code CompletableFuture} */
         FAST_FAIL
+    }
+
+    /**
+     * Erzeugt einen neuen {@link Builder} für {@link PostgresAuditLogger}.
+     *
+     * @return ein neuer Builder
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /**
+     * Konfigurierbarer Builder für {@link PostgresAuditLogger}.
+     * <p>
+     * Alle Felder bis auf {@code dataSource} sind optional.
+     */
+    public static final class Builder {
+        private DataSource dataSource;
+        private Executor executor;
+        private ObjectMapper objectMapper;
+        private int maxConcurrency;
+        private BackpressurePolicy backpressurePolicy;
+        private Consumer<AuditLoggingException> errorCallback;
+
+        private Builder() {}
+
+        /** @param dataSource die DataSource (Pflichtfeld) */
+        public Builder dataSource(DataSource dataSource) {
+            this.dataSource = dataSource;
+            return this;
+        }
+
+        /** @param executor Executor für asynchrone Ausführung (Default: Virtual-Thread-Executor) */
+        public Builder executor(Executor executor) {
+            this.executor = executor;
+            return this;
+        }
+
+        /** @param objectMapper konfigurierter ObjectMapper (Default: {@link #OBJECT_MAPPER}) */
+        public Builder objectMapper(ObjectMapper objectMapper) {
+            this.objectMapper = objectMapper;
+            return this;
+        }
+
+        /** @param maxConcurrency maximale gleichzeitige Log-Vorgänge; 0 = unbegrenzt (Default: 0) */
+        public Builder maxConcurrency(int maxConcurrency) {
+            this.maxConcurrency = maxConcurrency;
+            return this;
+        }
+
+        /** @param backpressurePolicy Verhalten bei erschöpftem Semaphor (Default: {@link BackpressurePolicy#BLOCK}) */
+        public Builder backpressurePolicy(BackpressurePolicy backpressurePolicy) {
+            this.backpressurePolicy = backpressurePolicy;
+            return this;
+        }
+
+        /** @param errorCallback optionaler Callback für asynchrone Fehler (Fire-and-Forget) */
+        public Builder errorCallback(Consumer<AuditLoggingException> errorCallback) {
+            this.errorCallback = errorCallback;
+            return this;
+        }
+
+        /**
+         * Erzeugt den {@link PostgresAuditLogger}.
+         *
+         * @throws NullPointerException wenn {@code dataSource} nicht gesetzt wurde
+         */
+        public PostgresAuditLogger build() {
+            Objects.requireNonNull(dataSource, "dataSource must not be null");
+            var exec = executor != null ? executor : DEFAULT_EXECUTOR;
+            var mapper = objectMapper != null ? objectMapper : OBJECT_MAPPER;
+            var sem = maxConcurrency > 0 ? new Semaphore(maxConcurrency) : null;
+            var pol = backpressurePolicy != null ? backpressurePolicy : BackpressurePolicy.BLOCK;
+            return new PostgresAuditLogger(dataSource, exec, false, false,
+                    mapper, sem, pol, errorCallback);
+        }
     }
 
     @Override

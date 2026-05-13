@@ -101,6 +101,19 @@ class PostgresAuditLoggersTest {
     }
 
     @Test
+    @DisplayName("builder creates logger with custom initializationFailTimeout")
+    void builder_customInitFailTimeout() {
+        var logger = PostgresAuditLoggers.builder()
+                .jdbcUrl("jdbc:postgresql://localhost:1/test")
+                .username("u")
+                .password("p")
+                .initializationFailTimeout(-1)
+                .build();
+        assertNotNull(logger);
+        logger.close();
+    }
+
+    @Test
     @DisplayName("builder creates logger with error callback")
     void builder_errorCallback() {
         var logger = PostgresAuditLoggers.builder()
