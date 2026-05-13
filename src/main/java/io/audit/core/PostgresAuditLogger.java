@@ -11,7 +11,9 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.time.OffsetDateTime;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -210,13 +212,38 @@ public class PostgresAuditLogger implements AuditLogger {
             }
         }
 
+        // Synchrone Pre-Serialization: Zustand im Aufrufer-Thread einfrieren
+        String changesJson;
+        String metadataJson;
+        try {
+            changesJson = toJson(entry.changes());
+            metadataJson = toJson(entry.metadata());
+        } catch (RuntimeException e) {
+            if (semaphore != null) {
+                semaphore.release();
+            }
+            if (errorCallback != null && e instanceof AuditLoggingException ale) {
+                errorCallback.accept(ale);
+            }
+            return CompletableFuture.failedFuture(e);
+        }
+
+        // Entry-Felder für den Lambda-Zugriff extrahieren
+        var entryId = entry.id();
+        var entryTimestamp = entry.timestamp();
+        var entryActorId = entry.actorId();
+        var entryAction = entry.action();
+        var entryEntityType = entry.entityType();
+        var entryEntityId = entry.entityId();
+
         CompletableFuture<Void> future;
         try {
             future = CompletableFuture.runAsync(() -> {
                 try {
-                    insert(entry);
+                    insert(entryId, entryTimestamp, entryActorId, entryAction,
+                            entryEntityType, entryEntityId, changesJson, metadataJson);
                 } catch (RuntimeException e) {
-                    log.error("Failed to persist audit entry: {}", entry.id(), e);
+                    log.error("Failed to persist audit entry: {}", entryId, e);
                     if (errorCallback != null && e instanceof AuditLoggingException ale) {
                         errorCallback.accept(ale);
                     }
@@ -236,19 +263,19 @@ public class PostgresAuditLogger implements AuditLogger {
         return future;
     }
 
-    private void insert(AuditEntry entry) {
-        var changesJson = toJson(entry.changes());
-        var metadataJson = toJson(entry.metadata());
-
+    private void insert(UUID id, OffsetDateTime timestamp,
+                        String actorId, String action,
+                        String entityType, String entityId,
+                        String changesJson, String metadataJson) {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(INSERT_SQL)) {
 
-            ps.setObject(1, entry.id());
-            ps.setObject(2, entry.timestamp());
-            ps.setString(3, entry.actorId());
-            ps.setString(4, entry.action());
-            ps.setString(5, entry.entityType());
-            ps.setString(6, entry.entityId());
+            ps.setObject(1, id);
+            ps.setObject(2, timestamp);
+            ps.setString(3, actorId);
+            ps.setString(4, action);
+            ps.setString(5, entityType);
+            ps.setString(6, entityId);
             ps.setString(7, changesJson);
             ps.setString(8, metadataJson);
             ps.executeUpdate();
