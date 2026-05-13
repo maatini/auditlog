@@ -1,0 +1,47 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.2/.schema/devbox.schema.json",
+  "packages": [
+    "temurin-bin-21@latest",
+    "maven@latest",
+    "postgresql_16@latest"
+  ],
+  "shell": {
+    "init_hook": [
+      "echo '=== Audit Log Core Devbox ==='",
+      "echo 'Java:' && java -version",
+      "echo 'Maven:' && mvn --version | head -1",
+      "echo 'PostgreSQL:' && psql --version",
+      "",
+      "export PGDATA=\"$PWD/.devbox/postgres\"",
+      "export PGHOST=\"$PWD/.devbox/postgres/socket\"",
+      "export PGDATABASE=audit_log",
+      "export PGUSER=audit_log",
+      "export PGPASSWORD=audit_log",
+      "export PGPORT=5432",
+      "",
+      "init_local_postgres() {",
+      "  mkdir -p \"$PGHOST\"",
+      "  if [ ! -d \"$PGDATA\" ]; then",
+      "    initdb --username=\"$PGUSER\" --pwfile=<(echo \"$PGPASSWORD\")",
+      "    echo \"unix_socket_directories = '$PGHOST'\" >> \"$PGDATA/postgresql.conf\"",
+      "    echo \"listen_addresses = ''\" >> \"$PGDATA/postgresql.conf\"",
+      "  fi",
+      "  pg_ctl start -l \"$PGDATA/logfile\" -o \"-k $PGHOST\" 2>/dev/null || true",
+      "  createdb --username=\"$PGUSER\" \"$PGDATABASE\" 2>/dev/null || true",
+      "  echo \"PostgreSQL ready: $PGHOST\"",
+      "}",
+      "",
+      "stop_local_postgres() {",
+      "  pg_ctl stop 2>/dev/null || true",
+      "}"
+    ],
+    "scripts": {
+      "db:start": "init_local_postgres",
+      "db:stop": "stop_local_postgres",
+      "db:migrate": "psql -f src/main/resources/db/migration/V1__create_audit_log_table.sql",
+      "db:console": "psql",
+      "build": "mvn clean package",
+      "build:no-tests": "mvn clean package -DskipTests"
+    }
+  }
+}

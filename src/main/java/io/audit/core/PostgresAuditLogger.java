@@ -1,0 +1,290 @@
+package io.audit.core;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+
+/**
+ * Audit-Logger für PostgreSQL mit asynchroner Persistierung via Virtual Threads.
+ *
+ * <p><b>Backpressure & Pool Starvation:</b> {@link #log(AuditEntry) log()} läuft
+ * standardmäßig auf einem Virtual-Thread-Executor. Da Virtual Threads praktisch
+ * unlimitiert erzeugt werden können, kann die Anzahl der wartenden Log-Vorgänge
+ * die Kapazität des Connection-Pools übersteigen (Standard-Poolgröße bei
+ * eigener Pool-Erstellung: 5). Sämtliche Threads konkurrieren dann um dieselben
+ * Datenbankverbindungen.
+ *
+ * <p>Ist der Pool erschöpft, blockiert der nächste {@code log()}-Aufruf so lange,
+ * bis eine Verbindung frei wird oder das Connection-Timeout (HikariCP-Standard:
+ * 30 s) abläuft. Im letzteren Fall wird eine {@code SQLTransientConnectionException}
+ * ausgelöst, die als {@link AuditLoggingException} in der zurückgegebenen
+ * {@code CompletableFuture} landen kann.
+ *
+ * <p><b>Empfehlungen bei hoher Last:</b>
+ * <ul>
+ *   <li>Connection-Pool ausreichend dimensionieren (Poolgröße = erwartete
+ *       parallele Log-Vorgänge + Reserve)</li>
+ *   <li>Einen eigenen {@link java.util.concurrent.Executor} mit begrenzter
+ *       Parallelität übergeben, z. B. einen virtuellen oder
+ *       plattformgebundenen Thread-Pool mit {@link
+ *       java.util.concurrent.Executors#newFixedThreadPool(int)}</li>
+ *   <li>Auf {@link java.util.concurrent.CompletableFuture#join() join()} im
+ *       aufrufenden Thread verzichten, wenn die Reihenfolge der Einträge
+ *       nicht garantiert werden muss</li>
+ * </ul>
+ */
+public class PostgresAuditLogger implements AuditLogger {
+
+    private static final Logger log = LoggerFactory.getLogger(PostgresAuditLogger.class);
+    static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    static final Executor DEFAULT_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
+
+    private static final String INSERT_SQL = """
+            INSERT INTO audit_log (id, timestamp, actor_id, action, entity_type, entity_id, changes, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb)
+            """;
+
+    private final DataSource dataSource;
+    private final Executor executor;
+    private final boolean ownsDataSource;
+    private final boolean ownsExecutor;
+    private final ObjectMapper objectMapper;
+    private final Semaphore semaphore;
+    private final BackpressurePolicy backpressurePolicy;
+    private final Consumer<AuditLoggingException> errorCallback;
+
+    public PostgresAuditLogger(DataSource dataSource) {
+        this(dataSource, DEFAULT_EXECUTOR, false, false, OBJECT_MAPPER, null, null, null);
+    }
+
+    public PostgresAuditLogger(DataSource dataSource, Executor executor) {
+        this(dataSource, executor, false, false, OBJECT_MAPPER, null, null, null);
+    }
+
+    /**
+     * Erzeugt einen Logger mit benutzerdefiniertem ObjectMapper.
+     *
+     * @param dataSource   die DataSource
+     * @param objectMapper konfigurierter ObjectMapper (z.&#8239;B. mit eigenen Modulen)
+     */
+    public PostgresAuditLogger(DataSource dataSource, ObjectMapper objectMapper) {
+        this(dataSource, DEFAULT_EXECUTOR, false, false, objectMapper, null, null, null);
+    }
+
+    /**
+     * Erzeugt einen Logger mit benutzerdefiniertem Executor und ObjectMapper.
+     *
+     * @param dataSource   die DataSource
+     * @param executor     Executor für asynchrone Ausführung
+     * @param objectMapper konfigurierter ObjectMapper
+     */
+    public PostgresAuditLogger(DataSource dataSource, Executor executor, ObjectMapper objectMapper) {
+        this(dataSource, executor, false, false, objectMapper, null, null, null);
+    }
+
+    /**
+     * Erzeugt einen Logger mit Backpressure-Steuerung (Default-Policy: BLOCK).
+     *
+     * @param dataSource      die DataSource
+     * @param maxConcurrency  maximale Anzahl gleichzeitiger Log-Vorgänge
+     */
+    public PostgresAuditLogger(DataSource dataSource, int maxConcurrency) {
+        this(dataSource, DEFAULT_EXECUTOR, false, false, OBJECT_MAPPER,
+                new Semaphore(maxConcurrency), BackpressurePolicy.BLOCK, null);
+    }
+
+    /**
+     * Erzeugt einen Logger mit Backpressure-Steuerung und konfigurierbarer Policy.
+     *
+     * @param dataSource          die DataSource
+     * @param maxConcurrency      maximale Anzahl gleichzeitiger Log-Vorgänge
+     * @param backpressurePolicy  Verhalten bei erschöpftem Semaphor
+     */
+    public PostgresAuditLogger(DataSource dataSource, int maxConcurrency, BackpressurePolicy backpressurePolicy) {
+        this(dataSource, DEFAULT_EXECUTOR, false, false, OBJECT_MAPPER,
+                new Semaphore(maxConcurrency), backpressurePolicy, null);
+    }
+
+    /**
+     * Erzeugt einen Logger mit Backpressure-Steuerung, Policy und Error-Callback.
+     *
+     * @param dataSource          die DataSource
+     * @param maxConcurrency      maximale Anzahl gleichzeitiger Log-Vorgänge
+     * @param backpressurePolicy  Verhalten bei erschöpftem Semaphor
+     * @param errorCallback       Callback für asynchrone Fehler (Fire-and-Forget)
+     */
+    public PostgresAuditLogger(DataSource dataSource, int maxConcurrency, BackpressurePolicy backpressurePolicy,
+                               Consumer<AuditLoggingException> errorCallback) {
+        this(dataSource, DEFAULT_EXECUTOR, false, false, OBJECT_MAPPER,
+                new Semaphore(maxConcurrency), backpressurePolicy, errorCallback);
+    }
+
+    /**
+     * Erzeugt einen Logger mit benutzerdefiniertem Executor, Backpressure, Policy und Error-Callback.
+     *
+     * @param dataSource          die DataSource
+     * @param executor            Executor für asynchrone Ausführung
+     * @param maxConcurrency      maximale Anzahl gleichzeitiger Log-Vorgänge
+     * @param backpressurePolicy  Verhalten bei erschöpftem Semaphor
+     * @param errorCallback       Callback für asynchrone Fehler (Fire-and-Forget)
+     */
+    public PostgresAuditLogger(DataSource dataSource, Executor executor, int maxConcurrency,
+                               BackpressurePolicy backpressurePolicy,
+                               Consumer<AuditLoggingException> errorCallback) {
+        this(dataSource, executor, false, false, OBJECT_MAPPER,
+                new Semaphore(maxConcurrency), backpressurePolicy, errorCallback);
+    }
+
+    PostgresAuditLogger(DataSource dataSource, Executor executor, boolean ownsDataSource, boolean ownsExecutor) {
+        this(dataSource, executor, ownsDataSource, ownsExecutor, OBJECT_MAPPER, null, null, null);
+    }
+
+    PostgresAuditLogger(DataSource dataSource, Executor executor, boolean ownsDataSource, boolean ownsExecutor,
+                        ObjectMapper objectMapper) {
+        this(dataSource, executor, ownsDataSource, ownsExecutor, objectMapper, null, null, null);
+    }
+
+    PostgresAuditLogger(DataSource dataSource, Executor executor, boolean ownsDataSource, boolean ownsExecutor,
+                        ObjectMapper objectMapper, Semaphore semaphore, BackpressurePolicy backpressurePolicy,
+                        Consumer<AuditLoggingException> errorCallback) {
+        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        this.executor = Objects.requireNonNull(executor, "executor must not be null");
+        this.ownsDataSource = ownsDataSource;
+        this.ownsExecutor = ownsExecutor;
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
+        this.semaphore = semaphore;
+        this.backpressurePolicy = backpressurePolicy;
+        this.errorCallback = errorCallback;
+    }
+
+    /**
+     * Verhalten bei erschöpfter Backpressure-Kapazität.
+     */
+    public enum BackpressurePolicy {
+        /** Aufrufer blockiert, bis ein Permit frei wird */
+        BLOCK,
+        /** Aufrufer erhält sofort eine fehlgeschlagene {@code CompletableFuture} */
+        FAST_FAIL
+    }
+
+    @Override
+    public CompletableFuture<Void> log(AuditEntry entry) {
+        Objects.requireNonNull(entry, "entry must not be null");
+
+        if (semaphore != null) {
+            if (!semaphore.tryAcquire()) {
+                if (backpressurePolicy == BackpressurePolicy.FAST_FAIL) {
+                    var ex = new AuditLoggingException(
+                            "Backpressure limit reached, all permits exhausted", null);
+                    if (errorCallback != null) {
+                        errorCallback.accept(ex);
+                    }
+                    return CompletableFuture.failedFuture(ex);
+                }
+                try {
+                    semaphore.acquire();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return CompletableFuture.failedFuture(
+                            new AuditLoggingException("Interrupted while waiting for backpressure permit", e));
+                }
+            }
+        }
+
+        CompletableFuture<Void> future;
+        try {
+            future = CompletableFuture.runAsync(() -> {
+                try {
+                    insert(entry);
+                } catch (RuntimeException e) {
+                    log.error("Failed to persist audit entry: {}", entry.id(), e);
+                    if (errorCallback != null && e instanceof AuditLoggingException ale) {
+                        errorCallback.accept(ale);
+                    }
+                    throw e;
+                }
+            }, executor);
+        } catch (RejectedExecutionException e) {
+            if (semaphore != null) {
+                semaphore.release();
+            }
+            return CompletableFuture.failedFuture(e);
+        }
+
+        if (semaphore != null) {
+            future = future.whenComplete((v, t) -> semaphore.release());
+        }
+        return future;
+    }
+
+    private void insert(AuditEntry entry) {
+        var changesJson = toJson(entry.changes());
+        var metadataJson = toJson(entry.metadata());
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(INSERT_SQL)) {
+
+            ps.setObject(1, entry.id());
+            ps.setObject(2, entry.timestamp());
+            ps.setString(3, entry.actorId());
+            ps.setString(4, entry.action());
+            ps.setString(5, entry.entityType());
+            ps.setString(6, entry.entityId());
+            ps.setString(7, changesJson);
+            ps.setString(8, metadataJson);
+            ps.executeUpdate();
+
+        } catch (SQLException e) {
+            throw new AuditLoggingException("Database error while writing audit log", e);
+        }
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            throw new AuditLoggingException("Failed to serialize audit log field to JSON", e);
+        }
+    }
+
+    @Override
+    public void close() {
+        if (ownsDataSource && dataSource instanceof AutoCloseable ac) {
+            try {
+                ac.close();
+            } catch (Exception e) {
+                log.warn("Error closing data source", e);
+            }
+        }
+        if (ownsExecutor && executor instanceof ExecutorService es) {
+            es.shutdown();
+            try {
+                if (!es.awaitTermination(5, TimeUnit.SECONDS)) {
+                    es.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                es.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+}
