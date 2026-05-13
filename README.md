@@ -1,5 +1,16 @@
 # Audit Log Core
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Java-21-%23ED8B00" alt="Java 21"/>
+  <img src="https://img.shields.io/badge/Maven-3.9+-%23C71A36" alt="Maven 3.9+"/>
+  <img src="https://img.shields.io/badge/PostgreSQL-14+-%234169E1" alt="PostgreSQL 14+"/>
+  <img src="https://img.shields.io/github/last-commit/maatini/auditlog" alt="Last Commit"/>
+  <img src="https://img.shields.io/badge/virtual_threads-yes-%2344CC11" alt="Virtual Threads"/>
+  <img src="https://img.shields.io/badge/license-MIT-%23blue" alt="MIT License"/>
+</p>
+
+<img src="auditlog.png" alt="Audit Log Overview" width="600"/>
+
 Leichtgewichtige Java-Bibliothek für PostgreSQL-basierte Audit-Logs.
 
 **Minimale Abhängigkeiten:** PostgreSQL-Treiber, Jackson, SLF4J. Kein HikariCP-Zwang.
