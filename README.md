@@ -71,6 +71,66 @@ Dafür HikariCP als Dependency ergänzen:
 </dependency>
 ```
 
+### Mit Builder (eigener HikariCP-Pool)
+
+```java
+PostgresAuditLogger logger = PostgresAuditLoggers.builder()
+    .jdbcUrl("jdbc:postgresql://localhost:5432/mydb")
+    .username("user")
+    .password("pass")
+    .maximumPoolSize(10)
+    .minimumIdle(2)
+    .poolName("my-audit-pool")
+    .build();
+```
+
+### Backpressure
+
+Die Bibliothek unterstützt zwei Strategien, wenn die Auslastung die konfigurierte Grenze erreicht:
+
+```java
+// Blockiert den aufrufenden Thread, bis ein Permit frei wird (Default)
+PostgresAuditLogger logger = new PostgresAuditLogger(dataSource, 5);
+
+// Schlägt sofort fehl – gibt eine failed CompletableFuture zurück
+PostgresAuditLogger logger = new PostgresAuditLogger(
+    dataSource, 5, BackpressurePolicy.FAST_FAIL);
+```
+
+| Policy | Verhalten |
+|---|---|
+| `BLOCK` | Thread wartet (blockierend) auf freies Permit |
+| `FAST_FAIL` | `CompletableFuture.failedFuture(AuditLoggingException)` |
+
+### Error-Callback für asynchrone Fehler
+
+Bei `FAST_FAIL` oder SQL-Fehlern kann ein Callback benachrichtigt werden:
+
+```java
+PostgresAuditLogger logger = new PostgresAuditLogger(
+    dataSource, 5, BackpressurePolicy.FAST_FAIL,
+    error -> monitoringService.alert("Audit-Log fehlgeschlagen: " + error.getMessage()));
+```
+
+### Eigener Executor
+
+Für benutzerdefinierte Thread-Pools (z. B. begrenzte Parallelität):
+
+```java
+var executor = Executors.newFixedThreadPool(10);
+var logger = new PostgresAuditLogger(dataSource, executor);
+// Der Executor wird von close() NICHT shutdown – liegt in der Verantwortung des Aufrufers
+```
+
+### Executor mit Backpressure
+
+```java
+var logger = new PostgresAuditLogger(
+    dataSource, executor, 10,
+    PostgresAuditLogger.BackpressurePolicy.FAST_FAIL,
+    error -> log.warn("Audit-Log fehlgeschlagen", error));
+```
+
 ## Abhängigkeiten im Überblick
 
 | Dependency | Scope | Erforderlich für |
@@ -98,8 +158,10 @@ Die Bibliothek kommt ohne HikariCP aus, wenn du einen eigenen `DataSource` über
 ## Architektur
 
 - **Asynchrone Persistierung**: via `CompletableFuture.runAsync()` auf Virtual Threads (Java 21+)
+- **Backpressure**: Semaphore-gesteuerte Drosselung (BLOCK / FAST_FAIL) gegen Pool Starvation
 - **Connection-Pooling**: wahlweise HikariCP (über Factory) oder eigener Pool
-- **JSON-Serialisierung**: Jackson (via `jackson-databind`)
+- **JSON-Serialisierung**: Jackson (via `jackson-databind`, ISO-8601-Datumsformate)
+- **Fehlerbehandlung**: asynchrone Fehler via `AuditLoggingException` in CompletableFuture + optionalem Callback
 - **Minimale Pflichtabhängigkeiten**: PostgreSQL-Treiber, Jackson, SLF4J
 
 ## Flyway als optionale Dependency

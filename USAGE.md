@@ -177,9 +177,50 @@ try {
 
 **Wichtig:** Wenn du `.join()` oder `.get()` nicht aufrufst, wird der Fehler **stumm geschluckt**. Das Logging im Hintergrund fängt ihn zwar, aber deine Anwendung bekommt nichts mit.
 
+### Error-Callback für asynchrone Fehler
+
+Wer bei jedem Fehler benachrichtigt werden will (auch ohne `.join()`):
+
+```java
+PostgresAuditLogger logger = new PostgresAuditLogger(dataSource, 5,
+    PostgresAuditLogger.BackpressurePolicy.FAST_FAIL,
+    error -> log.warn("Audit-Log fehlgeschlagen: {}", error.getMessage()));
+```
+
+Der Callback wird bei SQL-Fehlern und bei Backpressure-Ablehnung aufgerufen.
+
 ---
 
-## 7. Logger schließen
+## 7. Backpressure (Rückstau-Steuerung)
+
+Bei hoher Last können mehr Log-Anfragen eingehen, als der Connection-Pool bedienen kann.
+Zwei Strategien:
+
+```java
+// MAXIMAL 5 GLEICHZEITIGE LOG-VORGÄNGE
+// Blockiert den Aufrufer, bis ein Permit frei wird
+PostgresAuditLogger logger = new PostgresAuditLogger(dataSource, 5);
+```
+
+```java
+// STATTDESSEN SOFORT FEHLSCHLAGEN
+PostgresAuditLogger logger = new PostgresAuditLogger(
+    dataSource, 5, BackpressurePolicy.FAST_FAIL);
+// log() gibt eine failed CompletableFuture zurück – kein Blockieren
+```
+
+### Wann welche Policy?
+
+| Policy | Wann sinnvoll |
+|---|---|
+| `BLOCK` (Default) | Kritische Audit-Events, die auf jeden Fall durch müssen. Der Aufrufer wartet, bis die DB wieder frei ist. |
+| `FAST_FAIL` | High-Volume-Logging, bei dem ein verlorener Eintrag akzeptabel ist. Die Anwendung bleibt latency-stabil. |
+
+Ohne Backpressure-Konfiguration ist die Parallelität unbegrenzt – dann schützt nur der Connection-Timeout vor Überlast.
+
+---
+
+## 8. Logger schließen
 
 Immer schließen, wenn die Anwendung herunterfährt:
 
@@ -199,7 +240,7 @@ try (var logger = new PostgresAuditLogger(dataSource)) {
 
 ---
 
-## 8. Komplette Beispiele
+## 9. Komplette Beispiele
 
 ### Minimal (ein Eintrag)
 
@@ -287,7 +328,7 @@ public void importAll(List<AuditEntry> entries) {
 
 ---
 
-## 9. Best Practices für den Alltag
+## 10. Best Practices für den Alltag
 
 ### Fire-and-Forget vs. Sync
 
@@ -335,7 +376,7 @@ Der Builder generiert automatisch eine UUID. Wenn du eigene IDs setzt, achte auf
 
 ---
 
-## 10. Datenbank-Schema
+## 11. Datenbank-Schema
 
 ```sql
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -358,7 +399,7 @@ CREATE INDEX idx_audit_log_action    ON audit_log (action);
 
 ---
 
-## 11. Zusammenfassung: Ein Satz pro Konzept
+## 12. Zusammenfassung: Ein Satz pro Konzept
 
 | Konzept | Merksatz |
 |---|---|
@@ -367,3 +408,6 @@ CREATE INDEX idx_audit_log_action    ON audit_log (action);
 | Loggen | `logger.log(entry)` ist asynchron, `.join()` wartet auf Fertigstellung |
 | Fehler | `AuditLoggingException` – tritt erst bei `.join()` auf |
 | Schließen | `logger.close()` am Ende, am besten via try-with-resources |
+| Backpressure | `new PostgresAuditLogger(dataSource, 5)` für max. 5 gleichzeitige Logs, `FAST_FAIL` für sofortigen Fehler |
+| Error-Callback | Via `Consumer<AuditLoggingException>` im Konstruktor – wird bei jedem Fehler aufgerufen |
+| Executor | Wird von `close()` **nie** shutdown – bleibt in Verantwortung des Aufrufers |
