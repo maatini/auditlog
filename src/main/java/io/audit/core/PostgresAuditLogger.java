@@ -11,9 +11,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-import java.time.OffsetDateTime;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -249,60 +247,26 @@ public class PostgresAuditLogger implements AuditLogger {
     public CompletableFuture<Void> log(AuditEntry entry) {
         Objects.requireNonNull(entry, "entry must not be null");
 
-        if (semaphore != null) {
-            if (!semaphore.tryAcquire()) {
-                if (backpressurePolicy == BackpressurePolicy.FAST_FAIL) {
-                    var ex = new AuditLoggingException(
-                            "Backpressure limit reached, all permits exhausted", null);
-                    if (errorCallback != null) {
-                        errorCallback.accept(ex);
-                    }
-                    return CompletableFuture.failedFuture(ex);
-                }
-                try {
-                    semaphore.acquire();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return CompletableFuture.failedFuture(
-                            new AuditLoggingException("Interrupted while waiting for backpressure permit", e));
-                }
-            }
+        var rejected = acquirePermit();
+        if (rejected != null) {
+            return rejected;
         }
 
-        // Synchrone Pre-Serialization: Zustand im Aufrufer-Thread einfrieren
         String changesJson;
         String metadataJson;
         try {
             changesJson = toJson(entry.changes());
             metadataJson = toJson(entry.metadata());
         } catch (RuntimeException e) {
-            if (semaphore != null) {
-                semaphore.release();
-            }
-            if (errorCallback != null && e instanceof AuditLoggingException ale) {
-                errorCallback.accept(ale);
-            }
+            releasePermitAndNotify(e);
             return CompletableFuture.failedFuture(e);
         }
 
         CompletableFuture<Void> future;
         try {
-            future = CompletableFuture.runAsync(() -> {
-                try {
-                    insert(entry.id(), entry.timestamp(), entry.actorId(), entry.action(),
-                            entry.entityType(), entry.entityId(), changesJson, metadataJson);
-                } catch (RuntimeException e) {
-                    log.error("Failed to persist audit entry: {}", entry.id(), e);
-                    if (errorCallback != null && e instanceof AuditLoggingException ale) {
-                        errorCallback.accept(ale);
-                    }
-                    throw e;
-                }
-            }, executor);
+            future = CompletableFuture.runAsync(() -> executeInsert(entry, changesJson, metadataJson), executor);
         } catch (RejectedExecutionException e) {
-            if (semaphore != null) {
-                semaphore.release();
-            }
+            releasePermitAndNotify(e);
             return CompletableFuture.failedFuture(e);
         }
 
@@ -312,19 +276,58 @@ public class PostgresAuditLogger implements AuditLogger {
         return future;
     }
 
-    private void insert(UUID id, OffsetDateTime timestamp,
-                        String actorId, String action,
-                        String entityType, String entityId,
-                        String changesJson, String metadataJson) {
+    private CompletableFuture<Void> acquirePermit() {
+        if (semaphore == null || semaphore.tryAcquire()) {
+            return null;
+        }
+        if (backpressurePolicy == BackpressurePolicy.FAST_FAIL) {
+            var ex = new AuditLoggingException("Backpressure limit reached, all permits exhausted", null);
+            if (errorCallback != null) {
+                errorCallback.accept(ex);
+            }
+            return CompletableFuture.failedFuture(ex);
+        }
+        try {
+            semaphore.acquire();
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return CompletableFuture.failedFuture(
+                    new AuditLoggingException("Interrupted while waiting for backpressure permit", e));
+        }
+    }
+
+    private void releasePermitAndNotify(RuntimeException e) {
+        if (semaphore != null) {
+            semaphore.release();
+        }
+        if (errorCallback != null && e instanceof AuditLoggingException ale) {
+            errorCallback.accept(ale);
+        }
+    }
+
+    private void executeInsert(AuditEntry entry, String changesJson, String metadataJson) {
+        try {
+            insert(entry, changesJson, metadataJson);
+        } catch (RuntimeException e) {
+            log.error("Failed to persist audit entry: {}", entry.id(), e);
+            if (errorCallback != null && e instanceof AuditLoggingException ale) {
+                errorCallback.accept(ale);
+            }
+            throw e;
+        }
+    }
+
+    private void insert(AuditEntry entry, String changesJson, String metadataJson) {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(INSERT_SQL)) {
 
-            ps.setObject(1, id);
-            ps.setObject(2, timestamp);
-            ps.setString(3, actorId);
-            ps.setString(4, action);
-            ps.setString(5, entityType);
-            ps.setString(6, entityId);
+            ps.setObject(1, entry.id());
+            ps.setObject(2, entry.timestamp());
+            ps.setString(3, entry.actorId());
+            ps.setString(4, entry.action());
+            ps.setString(5, entry.entityType());
+            ps.setString(6, entry.entityId());
             ps.setString(7, changesJson);
             ps.setString(8, metadataJson);
             ps.executeUpdate();
@@ -344,23 +347,33 @@ public class PostgresAuditLogger implements AuditLogger {
 
     @Override
     public void close() {
-        if (ownsDataSource && dataSource instanceof AutoCloseable ac) {
-            try {
-                ac.close();
-            } catch (Exception e) {
-                log.warn("Error closing data source", e);
-            }
+        closeDataSource();
+        closeExecutor();
+    }
+
+    private void closeDataSource() {
+        if (!ownsDataSource || !(dataSource instanceof AutoCloseable ac)) {
+            return;
         }
-        if (ownsExecutor && executor instanceof ExecutorService es) {
-            es.shutdown();
-            try {
-                if (!es.awaitTermination(5, TimeUnit.SECONDS)) {
-                    es.shutdownNow();
-                }
-            } catch (InterruptedException e) {
+        try {
+            ac.close();
+        } catch (Exception e) {
+            log.warn("Error closing data source", e);
+        }
+    }
+
+    private void closeExecutor() {
+        if (!ownsExecutor || !(executor instanceof ExecutorService es)) {
+            return;
+        }
+        es.shutdown();
+        try {
+            if (!es.awaitTermination(5, TimeUnit.SECONDS)) {
                 es.shutdownNow();
-                Thread.currentThread().interrupt();
             }
+        } catch (InterruptedException e) {
+            es.shutdownNow();
+            Thread.currentThread().interrupt();
         }
     }
 }

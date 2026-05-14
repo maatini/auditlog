@@ -107,7 +107,7 @@ public class AuditLogDemo {
 
     static void demoBackpressure(DataSource dataSource) throws InterruptedException {
         header("4. Backpressure \u2014 FAST_FAIL mit max 2 Permits");
-        try (var logger = new PostgresAuditLogger(dataSource, 2, BackpressurePolicy.FAST_FAIL)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).maxConcurrency(2).backpressurePolicy(BackpressurePolicy.FAST_FAIL).build()) {
             var success = new AtomicInteger();
             var failed = new AtomicInteger();
             var latch = new CountDownLatch(5);
@@ -128,7 +128,7 @@ public class AuditLogDemo {
     static void demoErrorCallback(DataSource dataSource) {
         header("5. Error Callback \u2014 asynchrone Fehlerbenachrichtigung");
         var errors = new ArrayList<AuditLoggingException>();
-        try (var logger = new PostgresAuditLogger(dataSource, 1, BackpressurePolicy.FAST_FAIL, errors::add)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).maxConcurrency(1).backpressurePolicy(BackpressurePolicy.FAST_FAIL).errorCallback(errors::add).build()) {
             // First entry acquires the permit (fire-and-forget, no join)
             logger.log(AuditEntry.builder()
                     .actorId("cb-demo").action("OK").entityType("T").entityId("ok-1").build());
@@ -137,7 +137,7 @@ public class AuditLogDemo {
                     .actorId("cb-demo").action("FAIL").entityType("T").entityId("fail-1").build());
             try { future.join(); } catch (Exception ignored) {}
             System.out.println("  \u2713 Error-Callback aufgerufen: " + errors.size() + " Fehler");
-            System.out.println("  \u2713 Message: " + errors.getFirst().getMessage());
+            System.out.println("  \u2713 Message: " + errors.get(0).getMessage());
         } catch (Exception ignored) {}
     }
 

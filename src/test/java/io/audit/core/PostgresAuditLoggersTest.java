@@ -23,7 +23,7 @@ class PostgresAuditLoggersTest {
     @Test
     @DisplayName("create constructs logger with JDBC URL and executor")
     void create_withJdbcUrlAndExecutor() {
-        var executor = (Executor) task -> task.run();
+        var executor = (Executor) Runnable::run;
         var logger = PostgresAuditLoggers.create(
                 "jdbc:postgresql://localhost:1/test", "u", "p", executor);
         assertNotNull(logger);

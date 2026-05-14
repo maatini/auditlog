@@ -35,7 +35,7 @@ class PostgresAuditLoggerTest {
     private Connection connection;
     private PreparedStatement preparedStatement;
     private HikariDataSource dataSource;
-    private Executor syncExecutor = command -> command.run();
+    private Executor syncExecutor = Runnable::run;
     private AuditEntry validEntry;
 
     @BeforeEach
@@ -531,7 +531,7 @@ class PostgresAuditLoggerTest {
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
 
-        var executor = (Executor) command -> command.run();
+        var executor = (Executor) Runnable::run;
         var mapper = new ObjectMapper();
         var logger = PostgresAuditLogger.builder()
                 .dataSource(dataSource)

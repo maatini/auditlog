@@ -223,8 +223,7 @@ class PostgresAuditLoggerIntegrationTest {
         for (int t = 0; t < threadCount; t++) {
             int threadId = t;
             futures[t] = CompletableFuture.runAsync(() -> {
-                var localLogger = new PostgresAuditLogger(dataSource);
-                try {
+                try (var localLogger = new PostgresAuditLogger(dataSource)) {
                     for (int i = 0; i < entriesPerThread; i++) {
                         var entry = AuditEntry.builder()
                                 .actorId("concurrent-user")
@@ -235,8 +234,6 @@ class PostgresAuditLoggerIntegrationTest {
                                 .build();
                         localLogger.log(entry).join();
                     }
-                } finally {
-                    localLogger.close();
                 }
             }, executor);
         }
