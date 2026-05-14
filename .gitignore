@@ -52,4 +52,5 @@ Desktop.ini
 ### Devbox (local Maven repo) ###
 .m2-repo/
 cp.txt
-kladde.md.scannerwork/
+kladde.md
+.scannerwork
