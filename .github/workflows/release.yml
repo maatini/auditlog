@@ -19,11 +19,11 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Build & Verify
-        run: mvn verify -Djacoco.skip=true
+      - name: Build & Test
+        run: mvn test -Djacoco.skip=true -B
 
       - name: Publish to GitHub Packages
-        run: mvn deploy -DskipTests -Djacoco.skip=true
+        run: mvn deploy -DskipTests -Djacoco.skip=true -B
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

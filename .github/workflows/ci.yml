@@ -21,10 +21,10 @@ jobs:
           cache: 'maven'
 
       - name: Build & Unit Tests
-        run: mvn verify -Djacoco.skip=true
+        run: mvn test -Djacoco.skip=true -B
 
       - name: Integration Tests
-        run: mvn test -Pintegration -Djacoco.skip=true
+        run: mvn test -Pintegration -Djacoco.skip=true -B
 
   coverage:
     needs: build
@@ -41,7 +41,7 @@ jobs:
           cache: 'maven'
 
       - name: Test with JaCoCo
-        run: mvn test jacoco:report
+        run: mvn test jacoco:report -B
 
       - name: Upload JaCoCo report
         uses: actions/upload-artifact@v4

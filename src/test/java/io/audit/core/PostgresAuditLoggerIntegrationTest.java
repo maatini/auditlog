@@ -343,18 +343,15 @@ class PostgresAuditLoggerIntegrationTest {
     }
 
     @Test
-    @DisplayName("String values exceeding VARCHAR(255) are rejected by the database")
+    @DisplayName("String values exceeding VARCHAR(255) are rejected by the builder")
     void rejectsOverlyLongStrings() {
         var longStr = "x".repeat(300);
-        var entry = AuditEntry.builder()
-                .actorId(longStr)
-                .action("READ")
-                .entityType("User")
-                .entityId("1")
-                .build();
-
-        var future = logger.log(entry);
-        var ex = assertThrows(Exception.class, future::join);
-        assertInstanceOf(AuditLoggingException.class, ex.getCause());
+        assertThrows(IllegalArgumentException.class, () ->
+                AuditEntry.builder()
+                        .actorId(longStr)
+                        .action("READ")
+                        .entityType("User")
+                        .entityId("1")
+                        .build());
     }
 }
