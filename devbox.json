@@ -41,7 +41,8 @@
       "db:migrate": "psql -f src/main/resources/db/migration/V1__create_audit_log_table.sql",
       "db:console": "psql",
       "build": "mvn clean package",
-      "build:no-tests": "mvn clean package -DskipTests"
+      "build:no-tests": "mvn clean package -DskipTests",
+      "run:demo": "echo \">> Starte PostgreSQL (Docker)...\"; docker rm -f audit-demo-pg 2>/dev/null || true; docker run --rm -d --name audit-demo-pg -e POSTGRES_USER=demo -e POSTGRES_PASSWORD=demo -e POSTGRES_DB=audit_demo -p 5439:5432 postgres:16-alpine; sleep 3; echo \">> Baue Core-Library...\"; mvn install -DskipTests -Djacoco.skip=true -Dmaven.repo.local=\"$PWD/.m2-repo\"; echo \">> Starte Demo...\"; mvn -f example/pom.xml compile exec:java -Dexec.mainClass=io.audit.demo.AuditLogDemo -Dmaven.repo.local=\"$PWD/.m2-repo\"; echo \">> Fertig!\""
     }
   }
 }

@@ -6,8 +6,18 @@
 - **Ziel:** Minimale externe Abhängigkeiten, asynchrone und nicht-blockierende Persistierung von Audit-Trails.
 
 ## Build- & Test-Befehle
-- **Kompilieren & Testen:** `mvn clean test`
-- **Paketieren:** `mvn clean install`
+Alle Build- und Test-Befehle werden **ausschließlich innerhalb der Devbox-Umgebung** ausgeführt. Kein direktes `mvn` außerhalb von Devbox verwenden.
+
+- **Devbox-Shell betreten:** `devbox shell`
+- **Kompilieren & Testen:** `echo 'mvn clean test' | devbox shell`
+- **Paketieren:** `echo 'mvn clean install' | devbox shell`
+- **Devbox-Script (alternativ):** `devbox run build` (package), `devbox run build:no-tests` (ohne Tests)
+- **Datenbank starten:** `echo 'init_local_postgres' | devbox shell` oder `devbox run db:start`
+- **Datenbank stoppen:** `echo 'stop_local_postgres' | devbox shell` oder `devbox run db:stop`
+- **Migration ausführen:** `devbox run db:migrate`
+- **PSQL-Konsole:** `devbox run db:console`
+
+Die Devbox stellt Java 21 (Temurin), Maven und PostgreSQL 16 bereit. Die Umgebungsvariablen `PGHOST`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` und `PGPORT` werden automatisch gesetzt.
 
 ---
 

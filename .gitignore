@@ -48,3 +48,7 @@ Desktop.ini
 
 ### Logs ###
 *.log
+
+### Devbox (local Maven repo) ###
+.m2-repo/
+cp.txt
