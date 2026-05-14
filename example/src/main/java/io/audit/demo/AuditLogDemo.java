@@ -1,13 +1,13 @@
 package io.audit.demo;
 
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
 import io.audit.core.AuditEntry;
 import io.audit.core.AuditLoggingException;
 import io.audit.core.PostgresAuditLogger;
 import io.audit.core.PostgresAuditLogger.BackpressurePolicy;
+import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.containers.PostgreSQLContainer;
 
+import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
@@ -54,12 +54,10 @@ public class AuditLogDemo {
             System.out.println(ANSI_GREEN + "  ✓ PostgreSQL läuft auf " + postgres.getJdbcUrl() + ANSI_RESET);
 
             // DataSource erstellen
-            var config = new HikariConfig();
-            config.setJdbcUrl(postgres.getJdbcUrl());
-            config.setUsername(postgres.getUsername());
-            config.setPassword(postgres.getPassword());
-            config.setMaximumPoolSize(5);
-            var dataSource = new HikariDataSource(config);
+            var dataSource = new PGSimpleDataSource();
+            dataSource.setUrl(postgres.getJdbcUrl());
+            dataSource.setUser(postgres.getUsername());
+            dataSource.setPassword(postgres.getPassword());
 
             // Tabelle anlegen
             try (Connection conn = dataSource.getConnection();
@@ -98,8 +96,6 @@ public class AuditLogDemo {
 
             // ── 7. Read Back ──────────────────────────────────────────
             demoReadBack(dataSource);
-
-            dataSource.close();
         }
 
         System.out.println(ANSI_BOLD + ANSI_GREEN + "\n✓ Demo erfolgreich abgeschlossen!" + ANSI_RESET);
@@ -108,7 +104,7 @@ public class AuditLogDemo {
     // ─────────────────────────────────────────────────────────────────
     // 1. Basic — einfaches Loggen
     // ─────────────────────────────────────────────────────────────────
-    static void demoBasic(HikariDataSource dataSource) {
+    static void demoBasic(DataSource dataSource) {
         header("1. Basic — Einfaches Loggen");
         try (var logger = new PostgresAuditLogger(dataSource)) {
             var entry = AuditEntry.builder()
@@ -126,7 +122,7 @@ public class AuditLogDemo {
     // ─────────────────────────────────────────────────────────────────
     // 2. Builder — alle Optionen
     // ─────────────────────────────────────────────────────────────────
-    static void demoBuilder(HikariDataSource dataSource) {
+    static void demoBuilder(DataSource dataSource) {
         header("2. Builder — Logger mit voller Konfiguration");
         try (var logger = PostgresAuditLogger.builder()
                 .dataSource(dataSource)
@@ -149,7 +145,7 @@ public class AuditLogDemo {
     // ─────────────────────────────────────────────────────────────────
     // 3. Async — Virtual Threads
     // ─────────────────────────────────────────────────────────────────
-    static void demoAsync(HikariDataSource dataSource) {
+    static void demoAsync(DataSource dataSource) {
         header("3. Async — Virtual Threads im Hintergrund");
         try (var logger = new PostgresAuditLogger(dataSource)) {
             // Fire-and-Forget: kehrt sofort zurück
@@ -165,7 +161,7 @@ public class AuditLogDemo {
     // ─────────────────────────────────────────────────────────────────
     // 4. Backpressure — FAST_FAIL
     // ─────────────────────────────────────────────────────────────────
-    static void demoBackpressure(HikariDataSource dataSource) {
+    static void demoBackpressure(DataSource dataSource) throws InterruptedException {
         header("4. Backpressure — FAST_FAIL mit max 2 Permits");
         try (var logger = new PostgresAuditLogger(dataSource, 2, BackpressurePolicy.FAST_FAIL)) {
             var success = new AtomicInteger();
@@ -192,7 +188,7 @@ public class AuditLogDemo {
     // ─────────────────────────────────────────────────────────────────
     // 5. Error Callback
     // ─────────────────────────────────────────────────────────────────
-    static void demoErrorCallback(HikariDataSource dataSource) {
+    static void demoErrorCallback(DataSource dataSource) {
         header("5. Error Callback — asynchrone Fehlerbenachrichtigung");
         var errors = new ArrayList<AuditLoggingException>();
         try (var logger = new PostgresAuditLogger(
@@ -219,7 +215,7 @@ public class AuditLogDemo {
     // ─────────────────────────────────────────────────────────────────
     // 6. Batch — mehrere Entries parallel
     // ─────────────────────────────────────────────────────────────────
-    static void demoBatch(HikariDataSource dataSource) {
+    static void demoBatch(DataSource dataSource) {
         header("6. Batch — 10 Entries parallel loggen");
         try (var logger = new PostgresAuditLogger(dataSource)) {
             var futures = new CompletableFuture<?>[10];
@@ -242,7 +238,7 @@ public class AuditLogDemo {
     // ─────────────────────────────────────────────────────────────────
     // 7. Read Back — gelesene Daten anzeigen
     // ─────────────────────────────────────────────────────────────────
-    static void demoReadBack(HikariDataSource dataSource) throws Exception {
+    static void demoReadBack(DataSource dataSource) throws Exception {
         header("7. Read Back — gespeicherte Einträge abfragen");
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement();
