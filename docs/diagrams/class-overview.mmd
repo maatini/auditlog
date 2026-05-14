@@ -1,0 +1,60 @@
+---
+title: Core Types – Audit Log Core
+---
+
+classDiagram
+    class AuditLogger {
+        <<interface>>
+        +log(AuditEntry) CompletableFuture~Void~
+        +close()
+    }
+
+    class PostgresAuditLogger {
+        -DataSource dataSource
+        -Executor executor
+        -ObjectMapper objectMapper
+        -Semaphore semaphore
+        -BackpressurePolicy backpressurePolicy
+        -Consumer~AuditLoggingException~ errorCallback
+        +log(AuditEntry) CompletableFuture~Void~
+        +close()
+        +builder() Builder$
+    }
+
+    class PostgresAuditLoggers {
+        <<factory>>
+        +create(jdbcUrl,user,pass) PostgresAuditLogger$
+        +create(jdbcUrl,user,pass,executor) PostgresAuditLogger$
+        +builder() Builder$
+    }
+
+    class AuditEntry {
+        <<record>>
+        +UUID id
+        +OffsetDateTime timestamp
+        +String actorId
+        +String action
+        +String entityType
+        +String entityId
+        +Map~String,Object~ changes
+        +Map~String,Object~ metadata
+        +builder() Builder$
+    }
+
+    class AuditLoggingException {
+        <<exception>>
+        +AuditLoggingException(msg,cause)
+    }
+
+    class BackpressurePolicy {
+        <<enumeration>>
+        BLOCK
+        FAST_FAIL
+    }
+
+    AuditLogger <|.. PostgresAuditLogger : implements
+    PostgresAuditLoggers ..> PostgresAuditLogger : creates
+    PostgresAuditLogger ..> AuditEntry : logs
+    PostgresAuditLogger ..> BackpressurePolicy : uses
+    PostgresAuditLogger ..> AuditLoggingException : throws
+    AuditEntry ..> AuditLoggingException : may cause

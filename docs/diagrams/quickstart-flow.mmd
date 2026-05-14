@@ -1,0 +1,31 @@
+---
+title: Quickstart – From Clone to Running Demo
+---
+
+flowchart TD
+    CLONE["git clone"] --> DEPS["dependencies
+    Java 21 + Docker"]
+    DEPS --> DEVBOX["devbox run run:demo"]
+
+    DEVBOX --> DOCKER["starts PostgreSQL
+    Docker container :5439"]
+    DOCKER --> BUILD["mvn install
+    core library"]
+    BUILD --> DEMO["mvn exec:java
+    AuditLogDemo"]
+
+    DEMO --> STEP1["1. Basic Logging"]
+    STEP1 --> STEP2["2. Builder API"]
+    STEP2 --> STEP3["3. Async Virtual Threads"]
+    STEP3 --> STEP4["4. Backpressure FAST_FAIL"]
+    STEP4 --> STEP5["5. Error Callback"]
+    STEP5 --> STEP6["6. Batch (10 parallel)"]
+    STEP6 --> STEP7["7. Read Back"]
+    STEP7 --> DONE["Demo finished"]
+
+    DOCKER -.->|"--rm auto-cleanup"| CLEAN["Container removed
+    on stop"]
+
+    style DEVBOX fill:#4caf50,stroke:#2e7d32,color:#fff
+    style DONE fill:#4caf50,stroke:#2e7d32,color:#fff
+    style DOCKER fill:#2196f3,stroke:#1565c0,color:#fff

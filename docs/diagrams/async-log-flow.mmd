@@ -1,0 +1,51 @@
+---
+title: Async Log Flow – logger.log(entry)
+---
+
+sequenceDiagram
+    participant C as Caller Thread
+    participant L as PostgresAuditLogger
+    participant S as Semaphore
+    participant V as Virtual Thread
+    participant D as PostgreSQL
+
+    C->>L: log(entry)
+
+    alt semaphore configured
+        L->>S: tryAcquire()
+        alt permit available
+            S-->>L: true
+        else no permit
+            alt FAST_FAIL
+                L-->>C: failedFuture(AuditLoggingException)
+                Note over L: errorCallback.accept(ex)
+            else BLOCK (default)
+                L->>S: acquire() [blocking]
+                Note over C: caller thread blocked
+            end
+        end
+    end
+
+    L->>L: toJson(changes) + toJson(metadata)
+    Note over L: sync, in caller thread
+
+    L->>V: runAsync(insert, executor)
+    L-->>C: CompletableFuture
+
+    opt caller awaits result
+        C->>C: .join() or .get(timeout)
+    end
+
+    activate V
+    V->>D: getConnection()
+    V->>D: INSERT INTO audit_log (…)
+    D-->>V: done
+    deactivate V
+
+    V->>L: whenComplete → semaphore.release()
+    L->>S: release()
+
+    alt SQL error
+        V->>V: AuditLoggingException
+        Note over V: log.error() + errorCallback
+    end

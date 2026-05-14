@@ -175,6 +175,29 @@ Die Bibliothek kommt ohne HikariCP aus, wenn du einen eigenen `DataSource` über
 - **Fehlerbehandlung**: asynchrone Fehler via `AuditLoggingException` in CompletableFuture + optionalem Callback
 - **Minimale Pflichtabhängigkeiten**: PostgreSQL-Treiber, Jackson, SLF4J
 
+## Diagramme
+
+| Diagramm | Beschreibung |
+|---|---|
+| [Async Log Flow](docs/diagrams/async-log-flow.mmd) | Sequenz: `log()` → Semaphore → JSON → Virtual Thread → DB |
+| [Class Overview](docs/diagrams/class-overview.mmd) | Core-Typen: `AuditLogger`, `AuditEntry`, `PostgresAuditLoggers` |
+| [Deployment Variants](docs/diagrams/deployment-variants.mmd) | Drei Architekturen: DataSource / HikariCP / Devbox |
+| [Backpressure](docs/diagrams/backpressure-flow.mmd) | Zustandsautomat: BLOCK vs. FAST_FAIL |
+
+```mermaid
+sequenceDiagram
+    participant C as Caller Thread
+    participant L as PostgresAuditLogger
+    participant V as Virtual Thread
+    participant D as PostgreSQL
+    C->>L: log(entry)
+    L->>L: Semaphore + JSON serialize (sync)
+    L->>V: runAsync(insert)
+    L-->>C: CompletableFuture
+    V->>D: INSERT INTO audit_log
+    V->>L: release permit
+```
+
 ## Flyway als optionale Dependency
 
 Wenn Flyway zur Laufzeit genutzt werden soll:

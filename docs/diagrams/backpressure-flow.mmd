@@ -1,0 +1,45 @@
+---
+title: Backpressure Logic – Semaphore + Policies
+---
+
+stateDiagram-v2
+    [*] --> CheckSemaphore
+
+    CheckSemaphore --> NoLimit: semaphore == null
+    CheckSemaphore --> TryAcquire: semaphore configured
+
+    NoLimit --> Serialize
+
+    TryAcquire --> Serialize: permit granted
+    TryAcquire --> CheckPolicy: no permit
+
+    CheckPolicy --> Block: BLOCK (default)
+    CheckPolicy --> FastFail: FAST_FAIL
+
+    state Block {
+        [*] --> Waiting
+        Waiting --> Acquired: permit free
+    }
+
+    FastFail --> ErrorCallback: errorCallback(event)
+    FastFail --> FailedFuture: return failedFuture
+
+    ErrorCallback --> FailedFuture
+    FailedFuture --> [*]
+
+    Block --> Serialize
+    Acquired --> Serialize
+
+    Serialize --> SubmitAsync: JSON ok
+    Serialize --> ReleaseOnError: JSON error
+
+    ReleaseOnError --> FailedFuture
+
+    SubmitAsync --> Running: accepted by executor
+    SubmitAsync --> ReleaseOnError: rejected
+
+    Running --> ReleasePermit: INSERT done
+    Running --> ReleasePermit: SQL error
+
+    ReleasePermit --> CompletedFuture
+    CompletedFuture --> [*]

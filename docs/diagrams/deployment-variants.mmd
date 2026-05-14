@@ -1,0 +1,30 @@
+---
+title: Deployment Variants – How to Integrate
+---
+
+flowchart LR
+    subgraph A["Variant A: Existing DataSource (recommended)"]
+        direction LR
+        APP_A["Quarkus / Spring
+        (provides DataSource)"] -->|"new PostgresAuditLogger(ds)"| LOG_A[PostgresAuditLogger]
+        LOG_A -->|"async INSERT"| PG_A[(PostgreSQL)]
+    end
+
+    subgraph B["Variant B: Factory + HikariCP"]
+        direction LR
+        APP_B[Java Application] -->|"Loggers.create(url,user,pass)"| FAC_B[PostgresAuditLoggers]
+        FAC_B -->|"HikariCP pool"| LOG_B[PostgresAuditLogger]
+        LOG_B -->|"async INSERT"| PG_B[(PostgreSQL)]
+    end
+
+    subgraph C["Variant C: Demo / Devbox"]
+        direction LR
+        DEV["devbox run:demo"] -->|"PGSimpleDataSource
+        localhost:5439"| LOG_C[PostgresAuditLogger]
+        LOG_C -->|"async INSERT"| DOCKER["PostgreSQL
+        Docker Container"]
+    end
+
+    style A fill:#e8f5e9,stroke:#4caf50
+    style B fill:#e3f2fd,stroke:#2196f3
+    style C fill:#fff3e0,stroke:#ff9800
