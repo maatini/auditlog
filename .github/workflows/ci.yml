@@ -21,10 +21,10 @@ jobs:
           cache: 'maven'
 
       - name: Build & Unit Tests
-        run: mvn test -B
+        run: mvn test -Djacoco.skip=true -B
 
       - name: Integration Tests
-        run: mvn test -Pintegration -B
+        run: mvn test -Pintegration -Djacoco.skip=true -B
         env:
           TESTCONTAINERS_RYUK_DISABLED: 'true'
 
