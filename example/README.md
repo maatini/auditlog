@@ -39,7 +39,7 @@ Error-Callbacks und Batch-Import.
 
 1. **PostgreSQL starten** – Docker-Container auf Port 5439 (automatisch)
 2. **Tabelle anlegen** – `audit_log` mit UUID, JSONB, Timestamps
-3. **Sieben Demo-Schritte** – von Basic-Logging bis Read-Back
+3. **Sieben Demo-Schritte** – von Basic-Logging über Hash-Chain-Verifikation bis Read-Back
 
 ## Wie nutze ich die Bibliothek im eigenen Projekt?
 

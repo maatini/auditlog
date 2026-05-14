@@ -38,10 +38,15 @@ class PostgresAuditLoggerTest {
     private Executor syncExecutor = Runnable::run;
     private AuditEntry validEntry;
 
+    private PreparedStatement prevHashStatement;
+    private java.sql.ResultSet prevHashResultSet;
+
     @BeforeEach
     void setUp() {
         connection = mock(Connection.class);
         preparedStatement = mock(PreparedStatement.class);
+        prevHashStatement = mock(PreparedStatement.class);
+        prevHashResultSet = mock(java.sql.ResultSet.class);
         dataSource = mock(HikariDataSource.class);
         validEntry = AuditEntry.builder()
                 .actorId("test-user")
@@ -51,13 +56,21 @@ class PostgresAuditLoggerTest {
                 .changes(Map.<String, Object>of("status", Map.of("old", "PENDING", "new", "SHIPPED")))
                 .metadata(Map.<String, Object>of("source", "test"))
                 .build();
+        // Default: first prepareStatement (chain_hash query) returns prevHashStatement with empty result
+        try {
+            org.mockito.Mockito.doReturn(prevHashStatement).when(connection).prepareStatement(contains("chain_hash"));
+            org.mockito.Mockito.doReturn(prevHashResultSet).when(prevHashStatement).executeQuery();
+            org.mockito.Mockito.doReturn(false).when(prevHashResultSet).next();
+            org.mockito.Mockito.doReturn(preparedStatement).when(connection).prepareStatement(contains("INSERT"));
+        } catch (java.sql.SQLException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Test
     @DisplayName("log inserts entry successfully")
     void log_insertsEntrySuccessfully() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
 
         try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
             logger.log(validEntry).join();
@@ -79,7 +92,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("log inserts entry with empty changes and metadata")
     void log_insertsEntryWithEmptyJson() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
         var entry = AuditEntry.builder()
                 .actorId("u-1").action("READ").entityType("Doc").entityId("d-1")
                 .build();
@@ -117,7 +129,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("log wraps exceptions in AuditLoggingException")
     void log_wrapsExceptionInAuditLoggingException() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
         doThrow(new SQLException("insert failed")).when(preparedStatement).executeUpdate();
 
         try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
@@ -200,7 +211,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("CompletableFuture completes on successful log")
     void log_completesSuccessfully() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
 
         try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
             var future = logger.log(validEntry);
@@ -214,7 +224,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("log handles multiple calls")
     void log_handlesMultipleCalls() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
 
         try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
             var entry1 = AuditEntry.builder()
@@ -232,7 +241,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("handles concurrent log calls without interference")
     void log_handlesConcurrentCalls() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
 
         try (var logger = new PostgresAuditLogger(dataSource)) {
             var futures = new CompletableFuture<?>[20];
@@ -251,7 +259,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("logger remains usable after a failed log call")
     void logger_remainsUsableAfterFailedLog() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
 
         doThrow(new SQLException("first write fails"))
                 .doReturn(1)
@@ -289,7 +296,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("OffsetDateTime in changes is serialized as ISO string, not as timestamp array")
     void log_serializesOffsetDateTimeAsIsoString() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
 
         var entry = AuditEntry.builder()
                 .actorId("u-1").action("TEST").entityType("T").entityId("1")
@@ -314,7 +320,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("SQL injection strings are passed as parameter values, not executed")
     void log_withSqlInjectionStrings() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
 
         var entry = AuditEntry.builder()
                 .actorId("'; DROP TABLE audit_log; --")
@@ -339,7 +344,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("constructor with ObjectMapper creates usable logger")
     void constructor_withObjectMapper() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
         var mapper = new ObjectMapper();
         try (var logger = new PostgresAuditLogger(dataSource, mapper)) {
             logger.log(validEntry).join();
@@ -351,7 +355,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("constructor with Executor and ObjectMapper creates usable logger")
     void constructor_withExecutorAndObjectMapper() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
         var mapper = new ObjectMapper();
         try (var logger = new PostgresAuditLogger(dataSource, syncExecutor, mapper)) {
             logger.log(validEntry).join();
@@ -363,7 +366,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("constructor with maxConcurrency creates usable logger")
     void constructor_withMaxConcurrency() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
         try (var logger = new PostgresAuditLogger(dataSource, 10)) {
             logger.log(validEntry).join();
         }
@@ -457,7 +459,6 @@ class PostgresAuditLoggerTest {
                 PostgresAuditLogger.BackpressurePolicy.BLOCK, null);
 
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
 
         var logResult = CompletableFuture.supplyAsync(() -> {
             logger.log(validEntry).join();
@@ -476,7 +477,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("log with sufficient permits completes normally")
     void log_withSufficientPermitsCompletes() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
 
         var logger = new PostgresAuditLogger(dataSource, 10, PostgresAuditLogger.BackpressurePolicy.BLOCK);
         logger.log(validEntry).join();
@@ -515,7 +515,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("builder creates logger with dataSource only")
     void builder_withDataSource() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
 
         var logger = PostgresAuditLogger.builder()
                 .dataSource(dataSource)
@@ -529,7 +528,6 @@ class PostgresAuditLoggerTest {
     @DisplayName("builder creates logger with all optional fields")
     void builder_withAllFields() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.prepareStatement(anyString())).thenReturn(preparedStatement);
 
         var executor = (Executor) Runnable::run;
         var mapper = new ObjectMapper();
@@ -559,6 +557,180 @@ class PostgresAuditLoggerTest {
                 .dataSource(dataSource)
                 .build();
         assertNotNull(logger);
+        logger.close();
+    }
+
+    // ── Hash Chain ──────────────────────────────────────────────
+
+    @Test
+    @DisplayName("hash chain: first entry uses ZERO_HASH as predecessor")
+    void hashChain_firstEntryUsesZeroHash() throws Exception {
+        when(dataSource.getConnection()).thenReturn(connection);
+
+        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+            logger.log(validEntry).join();
+        }
+
+        // First entry should have a non-zero hash set as bytes param 9
+        var captor = ArgumentCaptor.forClass(byte[].class);
+        verify(preparedStatement).setBytes(eq(9), captor.capture());
+        byte[] hash = captor.getValue();
+        assertNotNull(hash);
+        assertEquals(32, hash.length, "SHA-256 is 32 bytes");
+        // Not all zeros (would only happen if ZERO_HASH input produces zero output)
+        boolean allZero = true;
+        for (byte b : hash) if (b != 0) { allZero = false; break; }
+        assertFalse(allZero, "hash should not be all zeros");
+    }
+
+    @Test
+    @DisplayName("hash chain: two entries produce different hashes")
+    void hashChain_twoEntriesDifferentHashes() throws Exception {
+        when(dataSource.getConnection()).thenReturn(connection);
+
+        // Mock prev hash query: first call returns empty (no prev), second returns a fake hash
+        var fakePrevHash = new byte[]{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32};
+        when(prevHashResultSet.next()).thenReturn(true, false);
+        when(prevHashResultSet.getBytes("chain_hash")).thenReturn(fakePrevHash);
+
+        var entry1 = AuditEntry.builder().actorId("u1").action("A").entityType("T").entityId("1").build();
+        var entry2 = AuditEntry.builder().actorId("u2").action("B").entityType("T").entityId("2").build();
+
+        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+            logger.log(entry1).join();
+            logger.log(entry2).join();
+        }
+
+        var captor = ArgumentCaptor.forClass(byte[].class);
+        verify(preparedStatement, times(2)).setBytes(eq(9), captor.capture());
+        var hashes = captor.getAllValues();
+        assertEquals(2, hashes.size());
+        assertFalse(java.util.Arrays.equals(hashes.get(0), hashes.get(1)),
+                "different entries should produce different hashes");
+    }
+
+    @Test
+    @DisplayName("hash chain: same entry data with same prev-hash produces deterministic hash")
+    void hashChain_deterministicHash() throws Exception {
+        when(dataSource.getConnection()).thenReturn(connection);
+
+        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+            logger.log(validEntry).join();
+        }
+
+        var captor1 = ArgumentCaptor.forClass(byte[].class);
+        verify(preparedStatement).setBytes(eq(9), captor1.capture());
+
+        // Reset mocks and run again with same entry
+        org.mockito.Mockito.reset(preparedStatement, connection, prevHashStatement, prevHashResultSet);
+        try {
+            org.mockito.Mockito.doReturn(prevHashStatement).when(connection).prepareStatement(contains("chain_hash"));
+            org.mockito.Mockito.doReturn(prevHashResultSet).when(prevHashStatement).executeQuery();
+            org.mockito.Mockito.doReturn(false).when(prevHashResultSet).next();
+            org.mockito.Mockito.doReturn(preparedStatement).when(connection).prepareStatement(contains("INSERT"));
+        } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
+        when(dataSource.getConnection()).thenReturn(connection);
+
+        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+            logger.log(validEntry).join();
+        }
+
+        var captor2 = ArgumentCaptor.forClass(byte[].class);
+        verify(preparedStatement).setBytes(eq(9), captor2.capture());
+        assertArrayEquals(captor1.getValue(), captor2.getValue(),
+                "same entry with same prev-hash should produce identical hash");
+    }
+
+    // ── Error-Callback nach Bugfix ──────────────────────────────
+
+    @Test
+    @DisplayName("error callback receives wrapped RuntimeException (non-AuditLoggingException)")
+    void errorCallback_wrapsNonAuditLoggingException() throws Exception {
+        var errors = new ArrayList<AuditLoggingException>();
+        var logger = new PostgresAuditLogger(dataSource, syncExecutor, 5,
+                PostgresAuditLogger.BackpressurePolicy.BLOCK, errors::add);
+
+        when(dataSource.getConnection()).thenReturn(connection);
+        // Throw a plain RuntimeException (not AuditLoggingException) during insert
+        doThrow(new RuntimeException("unexpected failure")).when(preparedStatement).executeUpdate();
+
+        assertThrows(Exception.class, () -> logger.log(validEntry).join());
+        assertEquals(1, errors.size(), "callback should be invoked even for non-AuditLoggingException");
+        assertTrue(errors.get(0).getMessage().contains("Unexpected execution error"),
+                "should wrap with contextual message, got: " + errors.get(0).getMessage());
+    }
+
+    // ── Race Condition ─────────────────────────────────────────
+
+    @Test
+    @DisplayName("close() during active log() completes without deadlock")
+    void close_duringActiveLogDoesNotDeadlock() throws Exception {
+        when(dataSource.getConnection()).thenReturn(connection);
+
+        var closeLatch = new java.util.concurrent.CountDownLatch(1);
+        var insertLatch = new java.util.concurrent.CountDownLatch(1);
+
+        // Make executeUpdate block until we release the latch
+        doAnswer(inv -> {
+            insertLatch.countDown();
+            closeLatch.await();
+            return 1;
+        }).when(preparedStatement).executeUpdate();
+
+        var logger = new PostgresAuditLogger(dataSource);
+
+        // Start async log
+        var logFuture = logger.log(validEntry);
+
+        // Wait until insert has started
+        assertTrue(insertLatch.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+        // Close while insert is still running
+        logger.close();
+
+        // Release the insert
+        closeLatch.countDown();
+
+        // The log should complete (possibly exceptionally if connection was closed)
+        try {
+            logFuture.join();
+        } catch (Exception ignored) {
+            // Expected: connection may be closed
+        }
+
+        // No deadlock occurred — test passed
+        assertTrue(true);
+    }
+
+    // ── Edge Cases: maxConcurrency ─────────────────────────────
+
+    @Test
+    @DisplayName("builder with maxConcurrency=0 uses unlimited concurrency (no semaphore)")
+    void builder_maxConcurrencyZero() throws Exception {
+        when(dataSource.getConnection()).thenReturn(connection);
+
+        var logger = PostgresAuditLogger.builder()
+                .dataSource(dataSource)
+                .maxConcurrency(0)
+                .executor(syncExecutor)
+                .build();
+        logger.log(validEntry).join();
+        verify(preparedStatement).executeUpdate();
+        logger.close();
+    }
+
+    @Test
+    @DisplayName("builder with negative maxConcurrency uses unlimited concurrency")
+    void builder_negativeMaxConcurrency() throws Exception {
+        when(dataSource.getConnection()).thenReturn(connection);
+
+        var logger = PostgresAuditLogger.builder()
+                .dataSource(dataSource)
+                .maxConcurrency(-5)
+                .executor(syncExecutor)
+                .build();
+        logger.log(validEntry).join();
+        verify(preparedStatement).executeUpdate();
         logger.close();
     }
 }

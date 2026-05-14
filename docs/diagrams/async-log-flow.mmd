@@ -32,6 +32,7 @@ sequenceDiagram
     L->>V: runAsync(insert, executor)
     L-->>C: CompletableFuture
 
+    Note over C: fire-and-forget is default, .join() optional
     opt caller awaits result
         C->>C: .join() or .get(timeout)
     end

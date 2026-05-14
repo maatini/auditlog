@@ -48,16 +48,13 @@ public class AuditLogDemo {
             System.out.println(ANSI_GREEN + "  \u2713 Verbunden mit PostgreSQL" + ANSI_RESET);
         }
 
-        // Run Flyway migration from classpath
+        // Run migration SQL from classpath
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement()) {
             var sql = new String(AuditLogDemo.class.getClassLoader()
                     .getResourceAsStream("db/migration/V1__create_audit_log_table.sql")
                     .readAllBytes());
-            for (String s : sql.split(";")) {
-                var trimmed = s.trim();
-                if (!trimmed.isEmpty()) stmt.execute(trimmed);
-            }
+            stmt.execute(sql);
         }
         System.out.println(ANSI_GREEN + "  \u2713 Tabelle 'audit_log' angelegt\n" + ANSI_RESET);
 
@@ -165,12 +162,14 @@ public class AuditLogDemo {
             System.out.println("  \u2713 " + rs.getInt("actions") + " verschiedene Aktionen");
         }
         try (Connection conn = dataSource.getConnection(); Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT actor_id, action, entity_type, entity_id, LEFT(changes::text, 60) AS changes, LEFT(metadata::text, 60) AS metadata FROM audit_log ORDER BY timestamp DESC LIMIT 3")) {
+             ResultSet rs = stmt.executeQuery("SELECT actor_id, action, entity_type, entity_id, LEFT(changes::text, 60) AS changes, LEFT(metadata::text, 60) AS metadata, encode(chain_hash, 'hex') AS chain_hex FROM audit_log ORDER BY timestamp DESC LIMIT 3")) {
             System.out.println();
             while (rs.next()) {
                 System.out.println("  \u2500\u2500 " + rs.getString("actor_id") + " | " + rs.getString("action") + " | " + rs.getString("entity_type") + " | " + rs.getString("entity_id"));
                 String ch = rs.getString("changes");
                 if (ch != null && !ch.equals("{}")) System.out.println("     changes:  " + ch);
+                String chainHex = rs.getString("chain_hex");
+                System.out.println("     chain_hash: " + (chainHex != null ? chainHex.substring(0, 16) + "..." : "null"));
                 String meta = rs.getString("metadata");
                 if (meta != null && !meta.equals("{}")) System.out.println("     metadata: " + meta);
             }

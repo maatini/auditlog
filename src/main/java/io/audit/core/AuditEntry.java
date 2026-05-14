@@ -13,7 +13,8 @@ public record AuditEntry(
         String entityType,
         String entityId,
         Map<String, Object> changes,
-        Map<String, Object> metadata
+        Map<String, Object> metadata,
+        byte[] chainHash
 ) {
 
     static final int MAX_STRING_LENGTH = 255;
@@ -84,7 +85,8 @@ public record AuditEntry(
                     timestamp != null ? timestamp : OffsetDateTime.now(),
                     actorId, action, entityType, entityId,
                     Collections.unmodifiableMap(changes),
-                    Collections.unmodifiableMap(metadata));
+                    Collections.unmodifiableMap(metadata),
+                    null);
         }
 
         private static void requireNotBlank(String name, String value) {

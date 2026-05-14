@@ -10,6 +10,9 @@ import org.slf4j.LoggerFactory;
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -41,9 +44,15 @@ public class PostgresAuditLogger implements AuditLogger {
     static final Executor DEFAULT_EXECUTOR = Executors.newVirtualThreadPerTaskExecutor();
 
     private static final String INSERT_SQL = """
-            INSERT INTO audit_log (id, timestamp, actor_id, action, entity_type, entity_id, changes, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb)
+            INSERT INTO audit_log (id, timestamp, actor_id, action, entity_type, entity_id, changes, metadata, chain_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?)
             """;
+
+    private static final String PREV_HASH_SQL = """
+            SELECT chain_hash FROM audit_log ORDER BY timestamp DESC LIMIT 1
+            """;
+
+    private static final byte[] ZERO_HASH = new byte[32];
 
     private final DataSource dataSource;
     private final Executor executor;
@@ -311,7 +320,9 @@ public class PostgresAuditLogger implements AuditLogger {
             insert(entry, changesJson, metadataJson);
         } catch (RuntimeException e) {
             log.error("Failed to persist audit entry: {}", entry.id(), e);
-            if (errorCallback != null && e instanceof AuditLoggingException ale) {
+            if (errorCallback != null) {
+                var ale = (e instanceof AuditLoggingException a) ? a
+                        : new AuditLoggingException("Unexpected execution error", e);
                 errorCallback.accept(ale);
             }
             throw e;
@@ -319,21 +330,54 @@ public class PostgresAuditLogger implements AuditLogger {
     }
 
     private void insert(AuditEntry entry, String changesJson, String metadataJson) {
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(INSERT_SQL)) {
+        try (Connection conn = dataSource.getConnection()) {
+            byte[] prevHash = queryPrevHash(conn);
+            byte[] hash = computeChainHash(prevHash, entry, changesJson, metadataJson);
 
-            ps.setObject(1, entry.id());
-            ps.setObject(2, entry.timestamp());
-            ps.setString(3, entry.actorId());
-            ps.setString(4, entry.action());
-            ps.setString(5, entry.entityType());
-            ps.setString(6, entry.entityId());
-            ps.setString(7, changesJson);
-            ps.setString(8, metadataJson);
-            ps.executeUpdate();
-
+            try (PreparedStatement ps = conn.prepareStatement(INSERT_SQL)) {
+                ps.setObject(1, entry.id());
+                ps.setObject(2, entry.timestamp());
+                ps.setString(3, entry.actorId());
+                ps.setString(4, entry.action());
+                ps.setString(5, entry.entityType());
+                ps.setString(6, entry.entityId());
+                ps.setString(7, changesJson);
+                ps.setString(8, metadataJson);
+                ps.setBytes(9, hash);
+                ps.executeUpdate();
+            }
         } catch (SQLException e) {
             throw new AuditLoggingException("Database error while writing audit log", e);
+        }
+    }
+
+    private byte[] queryPrevHash(Connection conn) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(PREV_HASH_SQL);
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                byte[] hash = rs.getBytes("chain_hash");
+                return hash != null ? hash : ZERO_HASH;
+            }
+            return ZERO_HASH;
+        }
+    }
+
+    private byte[] computeChainHash(byte[] prevHash, AuditEntry entry,
+                                     String changesJson, String metadataJson) {
+        try {
+            var md = MessageDigest.getInstance("SHA-256");
+            md.update(prevHash);
+            md.update(entry.id().toString().getBytes());
+            md.update(entry.timestamp().toString().getBytes());
+            md.update(entry.actorId().getBytes());
+            md.update(entry.action().getBytes());
+            md.update(entry.entityType().getBytes());
+            md.update(entry.entityId().getBytes());
+            md.update(changesJson.getBytes());
+            md.update(metadataJson.getBytes());
+            return md.digest();
+        } catch (NoSuchAlgorithmException e) {
+            throw new AuditLoggingException("SHA-256 not available", e);
         }
     }
 

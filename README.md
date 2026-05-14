@@ -165,6 +165,7 @@ Die Bibliothek kommt ohne HikariCP aus, wenn du einen eigenen `DataSource` über
 | entity_id   | VARCHAR(255)      | ID der Entität                        |
 | changes     | JSONB             | Vorher/Nachher-Vergleich              |
 | metadata    | JSONB             | Zusätzliche Metadaten                 |
+| chain_hash  | BYTEA             | SHA-256 Hash-Chain (Manipulationsschutz) |
 
 ## Architektur
 
@@ -174,6 +175,14 @@ Die Bibliothek kommt ohne HikariCP aus, wenn du einen eigenen `DataSource` über
 - **JSON-Serialisierung**: Jackson (via `jackson-databind`, ISO-8601-Datumsformate)
 - **Fehlerbehandlung**: asynchrone Fehler via `AuditLoggingException` in CompletableFuture + optionalem Callback
 - **Minimale Pflichtabhängigkeiten**: PostgreSQL-Treiber, Jackson, SLF4J
+- **Kryptografische Hash-Chain**: SHA-256-Verkettung über alle Einträge (Vorgänger-Hash
+  + aktuelle Felder). Manipulation an einem Eintrag bricht die Kette – nachweisbar
+  durch Neuberechnung. Erster Eintrag nutzt Zero-Hash als Vorgänger.
+- **Hinweis zu asynchroner Verarbeitung**: `log()` ist Fire-and-forget auf Virtual Threads
+  mit eigener DB-Connection. Das bedeutet: (1) ein JVM-Crash kann unpersistierte Einträge
+  verlieren – für garantierte Zustellung `.join()` verwenden; (2) Audit-Einträge laufen
+  außerhalb der Business-Transaktion – bei Rollback bleibt der Audit-Eintrag bestehen;
+  (3) eine separate DataSource für Audit-Logs verhindert Connection-Pool-Konflikte.
 
 ## Diagramme
 

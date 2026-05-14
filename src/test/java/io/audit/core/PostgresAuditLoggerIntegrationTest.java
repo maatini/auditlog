@@ -51,7 +51,8 @@ class PostgresAuditLoggerIntegrationTest {
                         entity_type VARCHAR(255)    NOT NULL,
                         entity_id   VARCHAR(255)    NOT NULL,
                         changes     JSONB,
-                        metadata    JSONB
+                        metadata    JSONB,
+                        chain_hash  BYTEA           NOT NULL
                     )
                     """);
         } catch (Exception e) {
@@ -292,6 +293,53 @@ class PostgresAuditLoggerIntegrationTest {
                 .baselineVersion("0")
                 .load();
         assertDoesNotThrow(flyway::migrate, "Flyway migration V1 should execute successfully");
+    }
+
+
+    @Test
+    @DisplayName("append-only trigger prevents UPDATE and DELETE")
+    void appendOnlyTriggerPreventsModification() throws Exception {
+        // Create trigger on the existing table
+        try (Connection conn = dataSource.getConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("""
+                    CREATE OR REPLACE FUNCTION block_audit_log_modification()
+                    RETURNS TRIGGER AS $$
+                    BEGIN
+                        RAISE EXCEPTION 'Audit log entries are immutable.';
+                        RETURN NULL;
+                    END;
+                    $$ LANGUAGE plpgsql""");
+            stmt.execute("""
+                    DROP TRIGGER IF EXISTS trg_audit_log_append_only ON audit_log;
+                    CREATE TRIGGER trg_audit_log_append_only
+                        BEFORE UPDATE OR DELETE ON audit_log
+                        FOR EACH ROW
+                        EXECUTE FUNCTION block_audit_log_modification()""");
+        }
+
+        // Insert a test entry
+        var entry = AuditEntry.builder()
+                .actorId("trigger-test").action("CREATE").entityType("Z").entityId("z-1").build();
+        logger.log(entry).join();
+
+        // DELETE must fail
+        try (Connection conn = dataSource.getConnection();
+             Statement stmt = conn.createStatement()) {
+            var ex = assertThrows(java.sql.SQLException.class,
+                    () -> stmt.execute("DELETE FROM audit_log WHERE id = '" + entry.id() + "'"));
+            assertTrue(ex.getMessage().contains("immutable"),
+                    "should reject DELETE, got: " + ex.getMessage());
+        }
+
+        // UPDATE must fail
+        try (Connection conn = dataSource.getConnection();
+             Statement stmt = conn.createStatement()) {
+            var ex = assertThrows(java.sql.SQLException.class,
+                    () -> stmt.execute("UPDATE audit_log SET action = 'HACKED' WHERE id = '" + entry.id() + "'"));
+            assertTrue(ex.getMessage().contains("immutable"),
+                    "should reject UPDATE, got: " + ex.getMessage());
+        }
     }
 
     @Test
