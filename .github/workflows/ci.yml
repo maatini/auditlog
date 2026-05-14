@@ -10,6 +10,21 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: audit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -24,12 +39,11 @@ jobs:
         run: mvn clean test -Djacoco.skip=true -B
 
       - name: Integration Tests
-        run: |
-          docker info
-          mvn test -Pintegration -Djacoco.skip=true -B
+        run: mvn test -Pintegration -Djacoco.skip=true -B
         env:
-          TESTCONTAINERS_RYUK_DISABLED: 'true'
-          DOCKER_HOST: unix:///var/run/docker.sock
+          AUDITLOG_JDBC_URL: jdbc:postgresql://localhost:5432/audit_test
+          AUDITLOG_JDBC_USER: test
+          AUDITLOG_JDBC_PASS: test
 
   coverage:
     needs: build

@@ -5,7 +5,6 @@ import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.*;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -17,26 +16,37 @@ import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@Testcontainers
 @Tag("integration")
 @DisplayName("PostgresAuditLogger (Integration)")
 class PostgresAuditLoggerIntegrationTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withDatabaseName("audit_test")
-            .withUsername("test")
-            .withPassword("test");
+    static PostgreSQLContainer<?> postgres;
 
     private static HikariDataSource dataSource;
     private PostgresAuditLogger logger;
 
     @BeforeAll
     static void setUpDatabase() {
+        var jdbcUrl = System.getenv("AUDITLOG_JDBC_URL");
+        String url, user, pass;
+        if (jdbcUrl != null && !jdbcUrl.isBlank()) {
+            url = jdbcUrl;
+            user = System.getenv().getOrDefault("AUDITLOG_JDBC_USER", "test");
+            pass = System.getenv().getOrDefault("AUDITLOG_JDBC_PASS", "test");
+        } else {
+            postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+                    .withDatabaseName("audit_test")
+                    .withUsername("test")
+                    .withPassword("test");
+            postgres.start();
+            url = postgres.getJdbcUrl();
+            user = postgres.getUsername();
+            pass = postgres.getPassword();
+        }
         var config = new HikariConfig();
-        config.setJdbcUrl(postgres.getJdbcUrl());
-        config.setUsername(postgres.getUsername());
-        config.setPassword(postgres.getPassword());
+        config.setJdbcUrl(url);
+        config.setUsername(user);
+        config.setPassword(pass);
         config.setMaximumPoolSize(5);
         dataSource = new HikariDataSource(config);
 
@@ -64,6 +74,9 @@ class PostgresAuditLoggerIntegrationTest {
     static void tearDownDatabase() {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
+        }
+        if (postgres != null && postgres.isRunning()) {
+            postgres.stop();
         }
     }
 
@@ -287,8 +300,12 @@ class PostgresAuditLoggerIntegrationTest {
     @Test
     @DisplayName("Flyway migration runs without error")
     void validatesFlywayMigration() {
+        var jdbcUrl = System.getenv("AUDITLOG_JDBC_URL");
+        var url = jdbcUrl != null ? jdbcUrl : postgres.getJdbcUrl();
+        var user = jdbcUrl != null ? System.getenv().getOrDefault("AUDITLOG_JDBC_USER", "test") : postgres.getUsername();
+        var pass = jdbcUrl != null ? System.getenv().getOrDefault("AUDITLOG_JDBC_PASS", "test") : postgres.getPassword();
         var flyway = org.flywaydb.core.Flyway.configure()
-                .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                .dataSource(url, user, pass)
                 .baselineOnMigrate(true)
                 .baselineVersion("0")
                 .load();
