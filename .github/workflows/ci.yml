@@ -21,7 +21,7 @@ jobs:
           cache: 'maven'
 
       - name: Build & Unit Tests
-        run: mvn test -Djacoco.skip=true -B
+        run: mvn clean test -Djacoco.skip=true -B
 
       - name: Integration Tests
         run: mvn test -Pintegration -Djacoco.skip=true -B
