@@ -24,7 +24,10 @@ jobs:
         run: mvn test -Djacoco.skip=true -B
 
       - name: Integration Tests
-        run: mvn test -Pintegration -Djacoco.skip=true -B
+        run: mvn test -Pintegration -Djacoco.skip=true -B -e
+        env:
+          TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE: /var/run/docker.sock
+          TESTCONTAINERS_RYUK_DISABLED: 'true'
 
   coverage:
     needs: build
