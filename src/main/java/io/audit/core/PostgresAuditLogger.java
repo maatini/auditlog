@@ -67,90 +67,10 @@ public class PostgresAuditLogger implements AuditLogger {
         this(dataSource, DEFAULT_EXECUTOR, false, false, OBJECT_MAPPER, null, null, null);
     }
 
-    /**
-     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
-     *             {@link Builder#executor(Executor)} instead.
-     */
-    @Deprecated(forRemoval = false)
-    public PostgresAuditLogger(DataSource dataSource, Executor executor) {
-        this(dataSource, executor, false, false, OBJECT_MAPPER, null, null, null);
-    }
-
-    /**
-     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
-     *             {@link Builder#objectMapper(ObjectMapper)} instead.
-     */
-    @Deprecated(forRemoval = false)
-    public PostgresAuditLogger(DataSource dataSource, ObjectMapper objectMapper) {
-        this(dataSource, DEFAULT_EXECUTOR, false, false, objectMapper, null, null, null);
-    }
-
-    /**
-     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
-     *             {@link Builder#executor(Executor)} and
-     *             {@link Builder#objectMapper(ObjectMapper)} instead.
-     */
-    @Deprecated(forRemoval = false)
-    public PostgresAuditLogger(DataSource dataSource, Executor executor, ObjectMapper objectMapper) {
-        this(dataSource, executor, false, false, objectMapper, null, null, null);
-    }
-
-    /**
-     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
-     *             {@link Builder#maxConcurrency(int)} instead.
-     */
-    @Deprecated(forRemoval = false)
-    public PostgresAuditLogger(DataSource dataSource, int maxConcurrency) {
-        this(dataSource, DEFAULT_EXECUTOR, false, false, OBJECT_MAPPER,
-                new Semaphore(maxConcurrency), BackpressurePolicy.BLOCK, null);
-    }
-
-    /**
-     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
-     *             {@link Builder#maxConcurrency(int)} and
-     *             {@link Builder#backpressurePolicy(BackpressurePolicy)} instead.
-     */
-    @Deprecated(forRemoval = false)
-    public PostgresAuditLogger(DataSource dataSource, int maxConcurrency, BackpressurePolicy backpressurePolicy) {
-        this(dataSource, DEFAULT_EXECUTOR, false, false, OBJECT_MAPPER,
-                new Semaphore(maxConcurrency), backpressurePolicy, null);
-    }
-
-    /**
-     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
-     *             {@link Builder#maxConcurrency(int)},
-     *             {@link Builder#backpressurePolicy(BackpressurePolicy)} and
-     *             {@link Builder#errorCallback(Consumer)} instead.
-     */
-    @Deprecated(forRemoval = false)
-    public PostgresAuditLogger(DataSource dataSource, int maxConcurrency, BackpressurePolicy backpressurePolicy,
-                               Consumer<AuditLoggingException> errorCallback) {
-        this(dataSource, DEFAULT_EXECUTOR, false, false, OBJECT_MAPPER,
-                new Semaphore(maxConcurrency), backpressurePolicy, errorCallback);
-    }
-
-    /**
-     * @deprecated Use {@link PostgresAuditLogger#builder()} and configure via
-     *             {@link Builder#executor(Executor)},
-     *             {@link Builder#maxConcurrency(int)},
-     *             {@link Builder#backpressurePolicy(BackpressurePolicy)} and
-     *             {@link Builder#errorCallback(Consumer)} instead.
-     */
-    @Deprecated(forRemoval = false)
-    public PostgresAuditLogger(DataSource dataSource, Executor executor, int maxConcurrency,
-                               BackpressurePolicy backpressurePolicy,
-                               Consumer<AuditLoggingException> errorCallback) {
-        this(dataSource, executor, false, false, OBJECT_MAPPER,
-                new Semaphore(maxConcurrency), backpressurePolicy, errorCallback);
-    }
-
-    PostgresAuditLogger(DataSource dataSource, Executor executor, boolean ownsDataSource, boolean ownsExecutor) {
+    // package-private: for tests and PostgresAuditLoggers factory
+    PostgresAuditLogger(DataSource dataSource, Executor executor,
+                        boolean ownsDataSource, boolean ownsExecutor) {
         this(dataSource, executor, ownsDataSource, ownsExecutor, OBJECT_MAPPER, null, null, null);
-    }
-
-    PostgresAuditLogger(DataSource dataSource, Executor executor, boolean ownsDataSource, boolean ownsExecutor,
-                        ObjectMapper objectMapper) {
-        this(dataSource, executor, ownsDataSource, ownsExecutor, objectMapper, null, null, null);
     }
 
     PostgresAuditLogger(DataSource dataSource, Executor executor, boolean ownsDataSource, boolean ownsExecutor,

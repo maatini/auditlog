@@ -140,9 +140,11 @@ try {
 ### Error-Callback
 
 ```java
-PostgresAuditLogger logger = new PostgresAuditLogger(dataSource, 5,
-    PostgresAuditLogger.BackpressurePolicy.FAST_FAIL,
-    error -> log.warn("Audit-Log fehlgeschlagen: {}", error.getMessage()));
+PostgresAuditLogger logger = PostgresAuditLogger.builder()
+    .dataSource(dataSource).maxConcurrency(5)
+    .backpressurePolicy(PostgresAuditLogger.BackpressurePolicy.FAST_FAIL)
+    .errorCallback(error -> log.warn("Audit-Log fehlgeschlagen: {}", error.getMessage()))
+    .build();
 ```
 
 Wird bei SQL-Fehlern und Backpressure-Ablehnung aufgerufen – auch ohne `.join()`.
@@ -265,11 +267,11 @@ Der Builder generiert automatisch eine UUID. Bei eigenen IDs: auf Eindeutigkeit 
 
 | Konzept | Merksatz |
 |---|---|
-| Logger erstellen | `new PostgresAuditLogger(dataSource)` oder `PostgresAuditLoggers.create(jdbcUrl, user, pass)` |
+| Logger erstellen | `new PostgresAuditLogger(dataSource)` oder `.builder().dataSource(ds).build()` |
 | Entry bauen | `AuditEntry.builder().actorId(...).action(...).entityType(...).entityId(...).build()` |
 | Loggen | `logger.log(entry)` ist asynchron, `.join()` wartet auf Fertigstellung |
 | Fehler | `AuditLoggingException` – tritt erst bei `.join()` auf |
 | Schließen | `logger.close()` am Ende, am besten via try-with-resources |
-| Backpressure | `new PostgresAuditLogger(dataSource, 5)` für max. 5 gleichzeitige Logs |
+| Backpressure | `.builder().dataSource(ds).maxConcurrency(5).build()` für max. 5 gleichzeitige Logs |
 | Error-Callback | `Consumer<AuditLoggingException>` im Konstruktor |
 | Executor | Wird von `close()` **nie** shutdown – Verantwortung des Aufrufers |

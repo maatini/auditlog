@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import io.audit.core.PostgresAuditLogger.BackpressurePolicy;
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -72,7 +73,7 @@ class PostgresAuditLoggerTest {
     void log_insertsEntrySuccessfully() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             logger.log(validEntry).join();
         }
 
@@ -96,7 +97,7 @@ class PostgresAuditLoggerTest {
                 .actorId("u-1").action("READ").entityType("Doc").entityId("d-1")
                 .build();
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             logger.log(entry).join();
         }
 
@@ -108,7 +109,7 @@ class PostgresAuditLoggerTest {
     @Test
     @DisplayName("log throws on null entry")
     void log_throwsOnNullEntry() {
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             assertThrows(NullPointerException.class, () -> logger.log(null));
         }
     }
@@ -118,7 +119,7 @@ class PostgresAuditLoggerTest {
     void log_throwsOnSqlException() throws Exception {
         when(dataSource.getConnection()).thenThrow(new SQLException("connection failed"));
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             var future = logger.log(validEntry);
             var ex = assertThrows(Exception.class, future::join);
             assertInstanceOf(AuditLoggingException.class, ex.getCause());
@@ -131,7 +132,7 @@ class PostgresAuditLoggerTest {
         when(dataSource.getConnection()).thenReturn(connection);
         doThrow(new SQLException("insert failed")).when(preparedStatement).executeUpdate();
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             var future = logger.log(validEntry);
             var ex = assertThrows(Exception.class, future::join);
             var cause = ex.getCause();
@@ -142,7 +143,7 @@ class PostgresAuditLoggerTest {
     @Test
     @DisplayName("close does not close an externally-owned DataSource")
     void close_doesNotCloseExternalDatasource() {
-        var logger = new PostgresAuditLogger(dataSource, syncExecutor);
+        var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build();
         logger.close();
         verify(dataSource, never()).close();
     }
@@ -168,7 +169,7 @@ class PostgresAuditLoggerTest {
     @DisplayName("close does not shut down executor from public constructor")
     void close_doesNotShutDownExecutorFromPublicConstructor() {
         var executor = Executors.newSingleThreadExecutor();
-        var logger = new PostgresAuditLogger(dataSource, executor);
+        var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(executor).build();
         logger.close();
         assertFalse(executor.isShutdown(),
                 "public PostgresAuditLogger(DataSource, Executor) must not shut down the executor");
@@ -189,14 +190,14 @@ class PostgresAuditLoggerTest {
     @DisplayName("constructor accepts any DataSource")
     void constructor_acceptsAnyDataSource() {
         var plainDs = mock(DataSource.class);
-        assertDoesNotThrow(() -> new PostgresAuditLogger(plainDs, syncExecutor));
+        assertDoesNotThrow(() -> PostgresAuditLogger.builder().dataSource(plainDs).executor(syncExecutor).build());
     }
 
     @Test
     @DisplayName("constructor rejects null executor")
     void constructor_rejectsNullExecutor() {
         assertThrows(NullPointerException.class,
-                () -> new PostgresAuditLogger(dataSource, (Executor) null));
+                () -> new PostgresAuditLogger(dataSource, null, false, false));
     }
 
     @Test
@@ -212,7 +213,7 @@ class PostgresAuditLoggerTest {
     void log_completesSuccessfully() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             var future = logger.log(validEntry);
             assertDoesNotThrow(future::join);
             assertTrue(future.isDone());
@@ -225,7 +226,7 @@ class PostgresAuditLoggerTest {
     void log_handlesMultipleCalls() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             var entry1 = AuditEntry.builder()
                     .actorId("u-1").action("A1").entityType("T").entityId("1").build();
             var entry2 = AuditEntry.builder()
@@ -264,7 +265,7 @@ class PostgresAuditLoggerTest {
                 .doReturn(1)
                 .when(preparedStatement).executeUpdate();
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             var first = logger.log(validEntry);
             assertThrows(Exception.class, first::join);
 
@@ -285,7 +286,7 @@ class PostgresAuditLoggerTest {
                 .changes(changes)
                 .build();
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             var future = logger.log(entry);
             var ex = assertThrows(Exception.class, future::join);
             assertInstanceOf(AuditLoggingException.class, ex.getCause());
@@ -302,7 +303,7 @@ class PostgresAuditLoggerTest {
                 .changes(Map.of("created_at", OffsetDateTime.now()))
                 .build();
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             logger.log(entry).join();
         }
 
@@ -330,7 +331,7 @@ class PostgresAuditLoggerTest {
                 .metadata(Map.of("script", "<script>alert('xss')</script>"))
                 .build();
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             logger.log(entry).join();
         }
 
@@ -345,7 +346,7 @@ class PostgresAuditLoggerTest {
     void constructor_withObjectMapper() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
         var mapper = new ObjectMapper();
-        try (var logger = new PostgresAuditLogger(dataSource, mapper)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).objectMapper(mapper).build()) {
             logger.log(validEntry).join();
         }
         verify(preparedStatement).executeUpdate();
@@ -356,7 +357,7 @@ class PostgresAuditLoggerTest {
     void constructor_withExecutorAndObjectMapper() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
         var mapper = new ObjectMapper();
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor, mapper)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).objectMapper(mapper).build()) {
             logger.log(validEntry).join();
         }
         verify(preparedStatement).executeUpdate();
@@ -366,7 +367,7 @@ class PostgresAuditLoggerTest {
     @DisplayName("constructor with maxConcurrency creates usable logger")
     void constructor_withMaxConcurrency() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
-        try (var logger = new PostgresAuditLogger(dataSource, 10)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).maxConcurrency(10).build()) {
             logger.log(validEntry).join();
         }
         verify(preparedStatement).executeUpdate();
@@ -443,7 +444,10 @@ class PostgresAuditLoggerTest {
     @Test
     @DisplayName("log with FAST_FAIL policy returns failed future when semaphore exhausted")
     void log_fastFailWhenSemaphoreExhausted() {
-        var logger = new PostgresAuditLogger(dataSource, 0, PostgresAuditLogger.BackpressurePolicy.FAST_FAIL);
+        var logger = PostgresAuditLogger.builder().dataSource(dataSource).maxConcurrency(1).backpressurePolicy(BackpressurePolicy.FAST_FAIL).build();
+        // Acquire the single permit
+        logger.log(validEntry);
+        // Second call must fail
         var future = logger.log(validEntry);
         assertTrue(future.isCompletedExceptionally());
         var ex = assertThrows(Exception.class, future::join);
@@ -478,7 +482,7 @@ class PostgresAuditLoggerTest {
     void log_withSufficientPermitsCompletes() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
 
-        var logger = new PostgresAuditLogger(dataSource, 10, PostgresAuditLogger.BackpressurePolicy.BLOCK);
+        var logger = PostgresAuditLogger.builder().dataSource(dataSource).maxConcurrency(10).backpressurePolicy(BackpressurePolicy.BLOCK).build();
         logger.log(validEntry).join();
 
         verify(preparedStatement).executeUpdate();
@@ -488,8 +492,8 @@ class PostgresAuditLoggerTest {
     @DisplayName("error callback is invoked on insert failure")
     void errorCallback_invokedOnInsertFailure() throws Exception {
         var errors = new ArrayList<AuditLoggingException>();
-        var logger = new PostgresAuditLogger(dataSource, syncExecutor, 5,
-                PostgresAuditLogger.BackpressurePolicy.BLOCK, errors::add);
+        var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor)
+                .maxConcurrency(5).backpressurePolicy(BackpressurePolicy.BLOCK).errorCallback(errors::add).build();
 
         when(dataSource.getConnection()).thenThrow(new SQLException("db fail"));
 
@@ -502,9 +506,12 @@ class PostgresAuditLoggerTest {
     @DisplayName("error callback is invoked on FAST_FAIL backpressure")
     void errorCallback_invokedOnFastFail() {
         var errors = new ArrayList<AuditLoggingException>();
-        var logger = new PostgresAuditLogger(dataSource, 0,
-                PostgresAuditLogger.BackpressurePolicy.FAST_FAIL, errors::add);
+        var logger = PostgresAuditLogger.builder().dataSource(dataSource)
+                .maxConcurrency(1).backpressurePolicy(BackpressurePolicy.FAST_FAIL).errorCallback(errors::add).build();
 
+        // Acquire the single permit
+        logger.log(validEntry);
+        // Second call must fail → error callback fires
         logger.log(validEntry);
 
         assertEquals(1, errors.size());
@@ -567,7 +574,7 @@ class PostgresAuditLoggerTest {
     void hashChain_firstEntryUsesZeroHash() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             logger.log(validEntry).join();
         }
 
@@ -596,7 +603,7 @@ class PostgresAuditLoggerTest {
         var entry1 = AuditEntry.builder().actorId("u1").action("A").entityType("T").entityId("1").build();
         var entry2 = AuditEntry.builder().actorId("u2").action("B").entityType("T").entityId("2").build();
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             logger.log(entry1).join();
             logger.log(entry2).join();
         }
@@ -614,7 +621,7 @@ class PostgresAuditLoggerTest {
     void hashChain_deterministicHash() throws Exception {
         when(dataSource.getConnection()).thenReturn(connection);
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             logger.log(validEntry).join();
         }
 
@@ -631,7 +638,7 @@ class PostgresAuditLoggerTest {
         } catch (java.sql.SQLException e) { throw new RuntimeException(e); }
         when(dataSource.getConnection()).thenReturn(connection);
 
-        try (var logger = new PostgresAuditLogger(dataSource, syncExecutor)) {
+        try (var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor).build()) {
             logger.log(validEntry).join();
         }
 
@@ -647,8 +654,8 @@ class PostgresAuditLoggerTest {
     @DisplayName("error callback receives wrapped RuntimeException (non-AuditLoggingException)")
     void errorCallback_wrapsNonAuditLoggingException() throws Exception {
         var errors = new ArrayList<AuditLoggingException>();
-        var logger = new PostgresAuditLogger(dataSource, syncExecutor, 5,
-                PostgresAuditLogger.BackpressurePolicy.BLOCK, errors::add);
+        var logger = PostgresAuditLogger.builder().dataSource(dataSource).executor(syncExecutor)
+                .maxConcurrency(5).backpressurePolicy(BackpressurePolicy.BLOCK).errorCallback(errors::add).build();
 
         when(dataSource.getConnection()).thenReturn(connection);
         // Throw a plain RuntimeException (not AuditLoggingException) during insert

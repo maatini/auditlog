@@ -28,8 +28,7 @@ public final class PostgresAuditLoggers {
      * @param password Datenbank-Passwort
      */
     public static PostgresAuditLogger create(String jdbcUrl, String username, String password) {
-        return new PostgresAuditLogger(createDataSource(jdbcUrl, username, password),
-                PostgresAuditLogger.DEFAULT_EXECUTOR, true, false);
+        return new PostgresAuditLogger(createDataSource(jdbcUrl, username, password));
     }
 
     /**
@@ -41,8 +40,9 @@ public final class PostgresAuditLoggers {
      * @param executor Executor für asynchrone Log-Ausführung
      */
     public static PostgresAuditLogger create(String jdbcUrl, String username, String password, Executor executor) {
-        return new PostgresAuditLogger(createDataSource(jdbcUrl, username, password),
-                Objects.requireNonNull(executor, "executor must not be null"), true, false);
+        var ds = createDataSource(jdbcUrl, username, password);
+        return PostgresAuditLogger.builder().dataSource(ds)
+                .executor(Objects.requireNonNull(executor, "executor must not be null")).build();
     }
 
     private static HikariDataSource createDataSource(String jdbcUrl, String username, String password) {
@@ -216,20 +216,18 @@ public final class PostgresAuditLoggers {
             var dataSource = new HikariDataSource(config);
 
             var exec = executor != null ? executor : PostgresAuditLogger.DEFAULT_EXECUTOR;
-            boolean ownsExec = false;
-
-            var semaphore = maxConcurrency > 0 ? new Semaphore(maxConcurrency) : null;
             var policy = backpressurePolicy != null
                     ? backpressurePolicy
                     : PostgresAuditLogger.BackpressurePolicy.BLOCK;
-            var cb = errorCallback;
 
-            if (objectMapper != null) {
-                return new PostgresAuditLogger(dataSource, exec, true, ownsExec, objectMapper,
-                        semaphore, policy, cb);
-            }
-            return new PostgresAuditLogger(dataSource, exec, true, ownsExec,
-                    PostgresAuditLogger.OBJECT_MAPPER, semaphore, policy, cb);
+            var builder = io.audit.core.PostgresAuditLogger.builder()
+                    .dataSource(dataSource).executor(exec)
+                    .maxConcurrency(maxConcurrency)
+                    .backpressurePolicy(policy != null ? policy : PostgresAuditLogger.BackpressurePolicy.BLOCK);
+            if (objectMapper != null) builder.objectMapper(objectMapper);
+            if (errorCallback != null) builder.errorCallback(errorCallback);
+            var logger = builder.build();
+            return logger;
         }
     }
 }

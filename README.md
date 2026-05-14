@@ -101,11 +101,13 @@ Die Bibliothek unterstützt zwei Strategien, wenn die Auslastung die konfigurier
 
 ```java
 // Blockiert den aufrufenden Thread, bis ein Permit frei wird (Default)
-PostgresAuditLogger logger = new PostgresAuditLogger(dataSource, 5);
+PostgresAuditLogger logger = PostgresAuditLogger.builder()
+    .dataSource(dataSource).maxConcurrency(5).build();
 
 // Schlägt sofort fehl – gibt eine failed CompletableFuture zurück
-PostgresAuditLogger logger = new PostgresAuditLogger(
-    dataSource, 5, BackpressurePolicy.FAST_FAIL);
+PostgresAuditLogger logger = PostgresAuditLogger.builder()
+    .dataSource(dataSource).maxConcurrency(5)
+    .backpressurePolicy(BackpressurePolicy.FAST_FAIL).build();
 ```
 
 | Policy | Verhalten |
@@ -118,9 +120,11 @@ PostgresAuditLogger logger = new PostgresAuditLogger(
 Bei `FAST_FAIL` oder SQL-Fehlern kann ein Callback benachrichtigt werden:
 
 ```java
-PostgresAuditLogger logger = new PostgresAuditLogger(
-    dataSource, 5, BackpressurePolicy.FAST_FAIL,
-    error -> monitoringService.alert("Audit-Log fehlgeschlagen: " + error.getMessage()));
+PostgresAuditLogger logger = PostgresAuditLogger.builder()
+    .dataSource(dataSource).maxConcurrency(5)
+    .backpressurePolicy(BackpressurePolicy.FAST_FAIL)
+    .errorCallback(error -> monitoringService.alert("Audit-Log fehlgeschlagen: " + error.getMessage()))
+    .build();
 ```
 
 ### Eigener Executor
@@ -129,17 +133,19 @@ Für benutzerdefinierte Thread-Pools (z. B. begrenzte Parallelität):
 
 ```java
 var executor = Executors.newFixedThreadPool(10);
-var logger = new PostgresAuditLogger(dataSource, executor);
+var logger = PostgresAuditLogger.builder()
+    .dataSource(dataSource).executor(executor).build();
 // Der Executor wird von close() NICHT shutdown – liegt in der Verantwortung des Aufrufers
 ```
 
 ### Executor mit Backpressure
 
 ```java
-var logger = new PostgresAuditLogger(
-    dataSource, executor, 10,
-    PostgresAuditLogger.BackpressurePolicy.FAST_FAIL,
-    error -> log.warn("Audit-Log fehlgeschlagen", error));
+var logger = PostgresAuditLogger.builder()
+    .dataSource(dataSource).executor(executor)
+    .maxConcurrency(10).backpressurePolicy(PostgresAuditLogger.BackpressurePolicy.FAST_FAIL)
+    .errorCallback(error -> log.warn("Audit-Log fehlgeschlagen", error))
+    .build();
 ```
 
 ## Abhängigkeiten im Überblick
