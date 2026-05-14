@@ -443,15 +443,27 @@ class PostgresAuditLoggerTest {
 
     @Test
     @DisplayName("log with FAST_FAIL policy returns failed future when semaphore exhausted")
-    void log_fastFailWhenSemaphoreExhausted() {
-        var logger = PostgresAuditLogger.builder().dataSource(dataSource).maxConcurrency(1).backpressurePolicy(BackpressurePolicy.FAST_FAIL).build();
-        // Acquire the single permit
-        logger.log(validEntry);
-        // Second call must fail
-        var future = logger.log(validEntry);
-        assertTrue(future.isCompletedExceptionally());
-        var ex = assertThrows(Exception.class, future::join);
+    void log_fastFailWhenSemaphoreExhausted() throws Exception {
+        when(dataSource.getConnection()).thenReturn(connection);
+
+        var holdLatch = new java.util.concurrent.CountDownLatch(1);
+        doAnswer(inv -> { holdLatch.await(); return 1; }).when(preparedStatement).executeUpdate();
+
+        var logger = PostgresAuditLogger.builder().dataSource(dataSource).maxConcurrency(1)
+                .backpressurePolicy(BackpressurePolicy.FAST_FAIL).build();
+
+        // First log acquires the single permit and blocks on executeUpdate
+        var firstFuture = logger.log(validEntry);
+
+        // Second call — permit not available → FAST_FAIL
+        var secondFuture = logger.log(validEntry);
+        assertTrue(secondFuture.isCompletedExceptionally());
+        var ex = assertThrows(Exception.class, secondFuture::join);
         assertInstanceOf(AuditLoggingException.class, ex.getCause());
+
+        // Release the first log
+        holdLatch.countDown();
+        firstFuture.join();
     }
 
     @Test
@@ -504,18 +516,27 @@ class PostgresAuditLoggerTest {
 
     @Test
     @DisplayName("error callback is invoked on FAST_FAIL backpressure")
-    void errorCallback_invokedOnFastFail() {
+    void errorCallback_invokedOnFastFail() throws Exception {
+        when(dataSource.getConnection()).thenReturn(connection);
+
+        var holdLatch = new java.util.concurrent.CountDownLatch(1);
+        doAnswer(inv -> { holdLatch.await(); return 1; }).when(preparedStatement).executeUpdate();
+
         var errors = new ArrayList<AuditLoggingException>();
         var logger = PostgresAuditLogger.builder().dataSource(dataSource)
                 .maxConcurrency(1).backpressurePolicy(BackpressurePolicy.FAST_FAIL).errorCallback(errors::add).build();
 
-        // Acquire the single permit
-        logger.log(validEntry);
+        // First log acquires the single permit and blocks
+        var firstFuture = logger.log(validEntry);
         // Second call must fail → error callback fires
         logger.log(validEntry);
 
         assertEquals(1, errors.size());
         assertTrue(errors.get(0).getMessage().contains("Backpressure"));
+
+        // Release the first log
+        holdLatch.countDown();
+        firstFuture.join();
     }
 
     @Test
