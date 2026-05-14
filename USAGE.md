@@ -1,10 +1,13 @@
 # Audit Log Core – Leitfaden für Junior-Entwickler
 
-Dieser Leitfaden erklärt, wie du die Audit-Log-Bibliothek in deiner Java-Anwendung nutzt.
+Dieser Leitfaden zeigt dir Schritt für Schritt, wie du die Audit-Log-Bibliothek
+in deiner Java-Anwendung nutzt. Für den schnellen Einstieg siehe [README.md](README.md).
 
 ---
 
-## 1. Abhängigkeit einbinden
+## 1. Abhängigkeit & Datenbank
+
+*Details und vollständige Konfiguration: siehe [README.md](README.md).*
 
 ```xml
 <dependency>
@@ -14,57 +17,35 @@ Dieser Leitfaden erklärt, wie du die Audit-Log-Bibliothek in deiner Java-Anwend
 </dependency>
 ```
 
-Benötigte PostgreSQL-Version: **14+** (wegen JSONB).
+PostgreSQL 14+ nötig (JSONB). Schema per Flyway-Migration oder manuelles SQL-Script
+anlegen – siehe README.
 
 ---
 
-## 2. Datenbank vorbereiten
+## 2. Logger erstellen
 
-Führe das Migration-Script auf deiner PostgreSQL-Datenbank aus:
-
-```bash
-psql -U dein_user -d deine_db -f src/main/resources/db/migration/V1__create_audit_log_table.sql
-```
-
-Oder nutze Flyway (empfohlen). Die Migration liegt unter `db/migration/V1__create_audit_log_table.sql`.
-
----
-
-## 3. Logger erstellen
-
-### Variante A: Mit vorhandenem DataSource (empfohlen)
-
-Wenn deine Anwendung bereits einen Connection-Pool hat (z. B. aus Quarkus, Spring Boot): 
+### Variante A: Vorhandener DataSource (empfohlen)
 
 ```java
 @Inject
 DataSource dataSource;  // Dein vorhandener Pool
-
 var logger = new PostgresAuditLogger(dataSource);
 ```
 
-Der Logger nimmt **jede** `javax.sql.DataSource` – HikariCP, DBCP, Tomcat Pool, egal.
+Akzeptiert jede `javax.sql.DataSource` – HikariCP, DBCP, Tomcat Pool, egal.
 
-### Variante B: Mit eigener JDBC-URL
-
-Wenn du noch keinen Connection-Pool hast (braucht HikariCP auf dem Classpath):
+### Variante B: Eigene JDBC-URL (braucht HikariCP)
 
 ```java
 var logger = PostgresAuditLoggers.create(
-    "jdbc:postgresql://localhost:5432/mydb",
-    "mein_user",
-    "mein_passwort"
-);
+    "jdbc:postgresql://localhost:5432/mydb", "mein_user", "mein_passwort");
 ```
 
-Der Logger erzeugt dann automatisch einen HikariCP-Pool mit:
-- max. 5 Verbindungen
-- min. 1 Verbindung idle
-- Pool-Name: `audit-log-pool`
+Erzeugt automatisch einen HikariCP-Pool (max. 5 Connections, min. 1 idle).
 
 ---
 
-## 4. Audit-Eintrag bauen
+## 3. Audit-Eintrag bauen
 
 Der Builder stellt sicher, dass alle Pflichtfelder gesetzt sind:
 
@@ -85,31 +66,20 @@ AuditEntry entry = AuditEntry.builder()
     .action("UPDATE")
     .entityType("Order")
     .entityId("ord-123")
-
-    // ID selbst setzen (sonst automatisch generiert)
-    .id(UUID.randomUUID())
-
-    // Zeitpunkt selbst setzen (sonst automatisch: jetzt)
-    .timestamp(OffsetDateTime.now())
-
-    // Änderungen im JSONB-Format
-    .changes(Map.of(
+    .id(UUID.randomUUID())        // ID selbst setzen (sonst automatisch)
+    .timestamp(OffsetDateTime.now())  // Zeitpunkt (sonst: jetzt)
+    .changes(Map.of(              // Änderungen als JSONB
         "status", Map.of("old", "PENDING", "new", "SHIPPED"),
-        "total", Map.of("old", 99.0, "new", 129.0)
-    ))
-
-    // Metadaten als JSONB
-    .metadata(Map.of(
+        "total", Map.of("old", 99.0, "new", 129.0)))
+    .metadata(Map.of(             // Metadaten als JSONB
         "source_ip", "192.168.1.1",
-        "correlation_id", "req-789"
-    ))
-
+        "correlation_id", "req-789"))
     .build();
 ```
 
-### Validierung – was passiert bei fehlenden Pflichtfeldern?
+### Validierung
 
-Der Builder wirft `IllegalArgumentException`, wenn:
+Der Builder wirft `IllegalArgumentException` bei fehlenden Pflichtfeldern:
 
 ```java
 .actorId(null)       // → IllegalArgumentException: actorId must not be blank
@@ -122,47 +92,37 @@ Der Builder wirft `IllegalArgumentException`, wenn:
 
 ---
 
-## 5. Eintrag loggen
+## 4. Eintrag loggen
 
 ```java
 logger.log(entry);
 ```
 
-Der Aufruf ist **asynchron** – er kehrt sofort zurück und schreibt im Hintergrund auf Virtual Threads in die Datenbank.
-
-### Auf Fertigstellung warten
+Der Aufruf ist **asynchron** – er kehrt sofort zurück und schreibt im Hintergrund
+auf Virtual Threads in die Datenbank.
 
 ```java
-// Blockieren, bis der Eintrag geschrieben ist:
+// Auf Fertigstellung warten:
 logger.log(entry).join();
 
-// Oder mit Timeout:
+// Mit Timeout:
 logger.log(entry).get(5, TimeUnit.SECONDS);
-```
 
-### Mehrere Einträge gleichzeitig
-
-```java
+// Mehrere parallel:
 CompletableFuture.allOf(
-    logger.log(entry1),
-    logger.log(entry2),
-    logger.log(entry3)
-).join();  // Wartet, bis ALLE fertig sind
+    logger.log(entry1), logger.log(entry2), logger.log(entry3)
+).join();
 ```
 
 ---
 
-## 6. Fehler behandeln
-
-### try-catch
+## 5. Fehler behandeln
 
 ```java
 try {
     logger.log(entry).join();
 } catch (AuditLoggingException e) {
     log.warn("Audit-Log fehlgeschlagen: {}", e.getMessage());
-    // Entscheide selbst: Ist ein fehlgeschlagenes Audit-Log ein
-    // Showstopper oder kann die Anwendung trotzdem weiterlaufen?
 }
 ```
 
@@ -175,11 +135,9 @@ try {
 | Zu langer String (>255 Zeichen) | actorId/action/entityType/entityId | `AuditLoggingException` via SQLException |
 | Connection-Pool leer | Zu viele gleichzeitige Anfragen | `AuditLoggingException` (Timeout) |
 
-**Wichtig:** Wenn du `.join()` oder `.get()` nicht aufrufst, wird der Fehler **stumm geschluckt**. Das Logging im Hintergrund fängt ihn zwar, aber deine Anwendung bekommt nichts mit.
+**Wichtig:** Ohne `.join()` oder `.get()` wird der Fehler **stumm geschluckt**.
 
-### Error-Callback für asynchrone Fehler
-
-Wer bei jedem Fehler benachrichtigt werden will (auch ohne `.join()`):
+### Error-Callback
 
 ```java
 PostgresAuditLogger logger = new PostgresAuditLogger(dataSource, 5,
@@ -187,91 +145,44 @@ PostgresAuditLogger logger = new PostgresAuditLogger(dataSource, 5,
     error -> log.warn("Audit-Log fehlgeschlagen: {}", error.getMessage()));
 ```
 
-Der Callback wird bei SQL-Fehlern und bei Backpressure-Ablehnung aufgerufen.
+Wird bei SQL-Fehlern und Backpressure-Ablehnung aufgerufen – auch ohne `.join()`.
 
 ---
 
-## 7. Backpressure (Rückstau-Steuerung)
+## 6. Backpressure (Rückstau-Steuerung)
 
-Bei hoher Last können mehr Log-Anfragen eingehen, als der Connection-Pool bedienen kann.
-Zwei Strategien:
-
-```java
-// MAXIMAL 5 GLEICHZEITIGE LOG-VORGÄNGE
-// Blockiert den Aufrufer, bis ein Permit frei wird
-PostgresAuditLogger logger = new PostgresAuditLogger(dataSource, 5);
-```
-
-```java
-// STATTDESSEN SOFORT FEHLSCHLAGEN
-PostgresAuditLogger logger = new PostgresAuditLogger(
-    dataSource, 5, BackpressurePolicy.FAST_FAIL);
-// log() gibt eine failed CompletableFuture zurück – kein Blockieren
-```
-
-### Wann welche Policy?
+*Konfiguration: siehe README. Hier die Entscheidungshilfe:*
 
 | Policy | Wann sinnvoll |
 |---|---|
-| `BLOCK` (Default) | Kritische Audit-Events, die auf jeden Fall durch müssen. Der Aufrufer wartet, bis die DB wieder frei ist. |
-| `FAST_FAIL` | High-Volume-Logging, bei dem ein verlorener Eintrag akzeptabel ist. Die Anwendung bleibt latency-stabil. |
-
-Ohne Backpressure-Konfiguration ist die Parallelität unbegrenzt – dann schützt nur der Connection-Timeout vor Überlast.
+| `BLOCK` (Default) | Kritische Audit-Events – Aufrufer wartet, bis DB wieder frei ist |
+| `FAST_FAIL` | High-Volume-Logging – verlorener Eintrag akzeptabel, Anwendung bleibt latency-stabil |
 
 ---
 
-## 8. Logger schließen
-
-Immer schließen, wenn die Anwendung herunterfährt:
+## 7. Logger schließen
 
 ```java
 logger.close();  // Schließt den Connection-Pool
 ```
 
-Am besten in einem `@PreDestroy` oder `finally`-Block:
+Am besten via try-with-resources (`AutoCloseable`):
 
 ```java
-// try-with-resources (AutoCloseable)
 try (var logger = new PostgresAuditLogger(dataSource)) {
     logger.log(entry).join();
-    // logger.close() wird automatisch aufgerufen
 }
 ```
 
 ---
 
-## 9. Komplette Beispiele
+## 8. Komplette Beispiele
 
-### Minimal (ein Eintrag)
-
-```java
-var logger = PostgresAuditLoggers.create(
-    "jdbc:postgresql://localhost:5432/mydb", "user", "pass");
-
-var entry = AuditEntry.builder()
-    .actorId("system")
-    .action("STARTUP")
-    .entityType("Application")
-    .entityId("my-app-1")
-    .build();
-
-logger.log(entry).join();
-logger.close();
-```
-
-### Typischer Service (z. B. in Quarkus)
+### Typischer Service (z.B. in Quarkus)
 
 ```java
-import io.audit.core.AuditEntry;
-import io.audit.core.PostgresAuditLogger;
-import jakarta.annotation.PreDestroy;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import javax.sql.DataSource;
-
 @ApplicationScoped
 public class AuditService {
-
     private final PostgresAuditLogger logger;
 
     @Inject
@@ -282,29 +193,14 @@ public class AuditService {
     public void logOrderUpdate(String orderId, String userId,
                                Map<String, Object> changes) {
         var entry = AuditEntry.builder()
-                .actorId(userId)
-                .action("UPDATE")
-                .entityType("Order")
-                .entityId(orderId)
-                .changes(changes)
-                .build();
-        logger.log(entry);  // fire-and-forget (kein .join())
-    }
-
-    public void logCreate(String actor, String type, String id) {
-        var entry = AuditEntry.builder()
-                .actorId(actor)
-                .action("CREATE")
-                .entityType(type)
-                .entityId(id)
-                .build();
-        logger.log(entry).join();  // blockieren, bis geschrieben
+                .actorId(userId).action("UPDATE")
+                .entityType("Order").entityId(orderId)
+                .changes(changes).build();
+        logger.log(entry);  // fire-and-forget
     }
 
     @PreDestroy
-    void cleanup() {
-        logger.close();
-    }
+    void cleanup() { logger.close(); }
 }
 ```
 
@@ -312,14 +208,12 @@ public class AuditService {
 
 ```java
 public void importAll(List<AuditEntry> entries) {
-    var futures = entries.stream()
-            .map(logger::log)
+    var futures = entries.stream().map(logger::log)
             .toArray(CompletableFuture[]::new);
-
     try {
         CompletableFuture.allOf(futures).join();
     } catch (CompletionException e) {
-        log.error("Batch-Import fehlgeschlagen nach {} erfolgreichen Einträgen",
+        log.error("Batch-Import fehlgeschlagen: {} erfolgreich",
             Arrays.stream(futures).filter(CompletableFuture::isDone).count(), e);
         throw new RuntimeException("Audit-Batch-Import fehlgeschlagen", e.getCause());
     }
@@ -328,78 +222,46 @@ public void importAll(List<AuditEntry> entries) {
 
 ---
 
-## 10. Best Practices für den Alltag
+## 9. Best Practices
 
 ### Fire-and-Forget vs. Sync
 
 ```java
-// OK: Wenn ein fehlgeschlagenes Audit-Log nicht kritisch ist
-logger.log(entry);
-
-// Besser: Wenn du wissen musst, ob es geklappt hat
-logger.log(entry).join();
+logger.log(entry);         // OK: Fehler nicht kritisch
+logger.log(entry).join();  // Besser: Du musst wissen, ob es geklappt hat
 ```
 
-Bei Audit-Logs gilt: **Lieber ohne Rückmeldung als die Anwendung aufhalten.** Standardmäßig `fire-and-forget`, nur bei Compliance-relevanten Events auf Bestätigung warten.
+Standardmäßig `fire-and-forget`, nur bei Compliance-relevanten Events auf Bestätigung warten.
 
 ### changes und metadata richtig nutzen
 
 ```java
-// FÜR ÄNDERUNGSNACHVERFOLG: Vorher/Nachher
+// ÄNDERUNGSNACHVERFOLG: Vorher/Nachher
 .changes(Map.of(
     "email", Map.of("old", "alice@old.com", "new", "alice@new.com"),
-    "role", Map.of("old", "USER", "new", "ADMIN")
-))
+    "role", Map.of("old", "USER", "new", "ADMIN")))
 
-// FÜR KONTEXT: Technische Metadaten
+// KONTEXT: Technische Metadaten
 .metadata(Map.of(
-    "source_ip", "192.168.1.1",
-    "user_agent", "Mozilla/...",
-    "correlation_id", "req-abc-123",
-    "tenant_id", "customer-456"
-))
+    "source_ip", "192.168.1.1", "user_agent", "Mozilla/...",
+    "correlation_id", "req-abc-123", "tenant_id", "customer-456"))
 ```
 
 ### Strings nicht länger als 255 Zeichen
 
-`actorId`, `action`, `entityType` und `entityId` sind per Datenbank-Schema auf `VARCHAR(255)` begrenzt. Längere Werte führen zu einem SQL-Fehler. Kürze sie vorher:
+`actorId`, `action`, `entityType`, `entityId` sind `VARCHAR(255)`. Längere Werte kürzen:
 
 ```java
-var safeActorId = longActorId.length() > 255
-    ? longActorId.substring(0, 255)
-    : longActorId;
+var safeId = longId.length() > 255 ? longId.substring(0, 255) : longId;
 ```
 
 ### ID-Kollision vermeiden
 
-Der Builder generiert automatisch eine UUID. Wenn du eigene IDs setzt, achte auf Eindeutigkeit – die DB hat einen Primary-Key-Constraint.
+Der Builder generiert automatisch eine UUID. Bei eigenen IDs: auf Eindeutigkeit achten.
 
 ---
 
-## 11. Datenbank-Schema
-
-```sql
-CREATE TABLE IF NOT EXISTS audit_log (
-    id          UUID            PRIMARY KEY,   -- Eindeutige ID
-    timestamp   TIMESTAMPTZ     NOT NULL,       -- Zeitstempel (mit Zeitzone)
-    actor_id    VARCHAR(255)    NOT NULL,       -- Wer?
-    action      VARCHAR(255)    NOT NULL,       -- Was?
-    entity_type VARCHAR(255)    NOT NULL,       -- Welche Entität?
-    entity_id   VARCHAR(255)    NOT NULL,       -- Welche ID?
-    changes     JSONB,                          -- Vorher/Nachher (optional)
-    metadata    JSONB                           -- Zusatzinfos (optional)
-);
-
--- Indizes für häufige Abfragen
-CREATE INDEX idx_audit_log_timestamp ON audit_log (timestamp);
-CREATE INDEX idx_audit_log_actor     ON audit_log (actor_id);
-CREATE INDEX idx_audit_log_entity    ON audit_log (entity_type, entity_id);
-CREATE INDEX idx_audit_log_action    ON audit_log (action);
-```
-
----
-
-## 12. Zusammenfassung: Ein Satz pro Konzept
+## 10. Zusammenfassung: Ein Satz pro Konzept
 
 | Konzept | Merksatz |
 |---|---|
@@ -408,6 +270,6 @@ CREATE INDEX idx_audit_log_action    ON audit_log (action);
 | Loggen | `logger.log(entry)` ist asynchron, `.join()` wartet auf Fertigstellung |
 | Fehler | `AuditLoggingException` – tritt erst bei `.join()` auf |
 | Schließen | `logger.close()` am Ende, am besten via try-with-resources |
-| Backpressure | `new PostgresAuditLogger(dataSource, 5)` für max. 5 gleichzeitige Logs, `FAST_FAIL` für sofortigen Fehler |
-| Error-Callback | Via `Consumer<AuditLoggingException>` im Konstruktor – wird bei jedem Fehler aufgerufen |
-| Executor | Wird von `close()` **nie** shutdown – bleibt in Verantwortung des Aufrufers |
+| Backpressure | `new PostgresAuditLogger(dataSource, 5)` für max. 5 gleichzeitige Logs |
+| Error-Callback | `Consumer<AuditLoggingException>` im Konstruktor |
+| Executor | Wird von `close()` **nie** shutdown – Verantwortung des Aufrufers |

@@ -26,31 +26,13 @@ import java.util.function.Consumer;
 /**
  * Audit-Logger für PostgreSQL mit asynchroner Persistierung via Virtual Threads.
  *
- * <p><b>Backpressure & Pool Starvation:</b> {@link #log(AuditEntry) log()} läuft
- * standardmäßig auf einem Virtual-Thread-Executor. Da Virtual Threads praktisch
- * unlimitiert erzeugt werden können, kann die Anzahl der wartenden Log-Vorgänge
- * die Kapazität des Connection-Pools übersteigen (Standard-Poolgröße bei
- * eigener Pool-Erstellung: 5). Sämtliche Threads konkurrieren dann um dieselben
- * Datenbankverbindungen.
+ * <p>Schreibt Audit-Einträge nicht-blockierend in PostgreSQL mittels
+ * {@link java.util.concurrent.CompletableFuture#runAsync(Runnable, Executor)}.
+ * Backpressure wird über einen konfigurierbaren {@link java.util.concurrent.Semaphore}
+ * gesteuert – siehe {@link AuditLogger#log(AuditEntry)} für Details.
  *
- * <p>Ist der Pool erschöpft, blockiert der nächste {@code log()}-Aufruf so lange,
- * bis eine Verbindung frei wird oder das Connection-Timeout (HikariCP-Standard:
- * 30 s) abläuft. Im letzteren Fall wird eine {@code SQLTransientConnectionException}
- * ausgelöst, die als {@link AuditLoggingException} in der zurückgegebenen
- * {@code CompletableFuture} landen kann.
- *
- * <p><b>Empfehlungen bei hoher Last:</b>
- * <ul>
- *   <li>Connection-Pool ausreichend dimensionieren (Poolgröße = erwartete
- *       parallele Log-Vorgänge + Reserve)</li>
- *   <li>Einen eigenen {@link java.util.concurrent.Executor} mit begrenzter
- *       Parallelität übergeben, z. B. einen virtuellen oder
- *       plattformgebundenen Thread-Pool mit {@link
- *       java.util.concurrent.Executors#newFixedThreadPool(int)}</li>
- *   <li>Auf {@link java.util.concurrent.CompletableFuture#join() join()} im
- *       aufrufenden Thread verzichten, wenn die Reihenfolge der Einträge
- *       nicht garantiert werden muss</li>
- * </ul>
+ * <p>Erstellung entweder direkt via {@code new PostgresAuditLogger(dataSource)}
+ * oder mit dem {@link #builder() Builder}.
  */
 public class PostgresAuditLogger implements AuditLogger {
 
@@ -303,22 +285,14 @@ public class PostgresAuditLogger implements AuditLogger {
             return CompletableFuture.failedFuture(e);
         }
 
-        // Entry-Felder für den Lambda-Zugriff extrahieren
-        var entryId = entry.id();
-        var entryTimestamp = entry.timestamp();
-        var entryActorId = entry.actorId();
-        var entryAction = entry.action();
-        var entryEntityType = entry.entityType();
-        var entryEntityId = entry.entityId();
-
         CompletableFuture<Void> future;
         try {
             future = CompletableFuture.runAsync(() -> {
                 try {
-                    insert(entryId, entryTimestamp, entryActorId, entryAction,
-                            entryEntityType, entryEntityId, changesJson, metadataJson);
+                    insert(entry.id(), entry.timestamp(), entry.actorId(), entry.action(),
+                            entry.entityType(), entry.entityId(), changesJson, metadataJson);
                 } catch (RuntimeException e) {
-                    log.error("Failed to persist audit entry: {}", entryId, e);
+                    log.error("Failed to persist audit entry: {}", entry.id(), e);
                     if (errorCallback != null && e instanceof AuditLoggingException ale) {
                         errorCallback.accept(ale);
                     }

@@ -48,9 +48,16 @@ public class AuditLogDemo {
             System.out.println(ANSI_GREEN + "  \u2713 Verbunden mit PostgreSQL" + ANSI_RESET);
         }
 
+        // Run Flyway migration from classpath
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement()) {
-            stmt.execute("CREATE TABLE IF NOT EXISTS audit_log (id UUID PRIMARY KEY, timestamp TIMESTAMPTZ NOT NULL, actor_id VARCHAR(255) NOT NULL, action VARCHAR(255) NOT NULL, entity_type VARCHAR(255) NOT NULL, entity_id VARCHAR(255) NOT NULL, changes JSONB, metadata JSONB)");
+            var sql = new String(AuditLogDemo.class.getClassLoader()
+                    .getResourceAsStream("db/migration/V1__create_audit_log_table.sql")
+                    .readAllBytes());
+            for (String s : sql.split(";")) {
+                var trimmed = s.trim();
+                if (!trimmed.isEmpty()) stmt.execute(trimmed);
+            }
         }
         System.out.println(ANSI_GREEN + "  \u2713 Tabelle 'audit_log' angelegt\n" + ANSI_RESET);
 
@@ -122,10 +129,13 @@ public class AuditLogDemo {
         header("5. Error Callback \u2014 asynchrone Fehlerbenachrichtigung");
         var errors = new ArrayList<AuditLoggingException>();
         try (var logger = new PostgresAuditLogger(dataSource, 1, BackpressurePolicy.FAST_FAIL, errors::add)) {
+            // First entry acquires the permit (fire-and-forget, no join)
             logger.log(AuditEntry.builder()
-                    .actorId("cb-demo").action("OK").entityType("T").entityId("ok-1").build()).join();
-            logger.log(AuditEntry.builder()
-                    .actorId("cb-demo").action("FAIL").entityType("T").entityId("fail-1").build()).join();
+                    .actorId("cb-demo").action("OK").entityType("T").entityId("ok-1").build());
+            // Second entry is rejected → error callback fires
+            var future = logger.log(AuditEntry.builder()
+                    .actorId("cb-demo").action("FAIL").entityType("T").entityId("fail-1").build());
+            try { future.join(); } catch (Exception ignored) {}
             System.out.println("  \u2713 Error-Callback aufgerufen: " + errors.size() + " Fehler");
             System.out.println("  \u2713 Message: " + errors.getFirst().getMessage());
         } catch (Exception ignored) {}

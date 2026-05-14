@@ -75,40 +75,26 @@ public record AuditEntry(
         }
 
         public AuditEntry build() {
-            if (actorId == null || actorId.isBlank()) {
-                throw new IllegalArgumentException("actorId must not be blank");
-            }
-            if (actorId.length() > MAX_STRING_LENGTH) {
-                throw new IllegalArgumentException(
-                        "actorId exceeds " + MAX_STRING_LENGTH + " characters: " + actorId.length());
-            }
-            if (action == null || action.isBlank()) {
-                throw new IllegalArgumentException("action must not be blank");
-            }
-            if (action.length() > MAX_STRING_LENGTH) {
-                throw new IllegalArgumentException(
-                        "action exceeds " + MAX_STRING_LENGTH + " characters: " + action.length());
-            }
-            if (entityType == null || entityType.isBlank()) {
-                throw new IllegalArgumentException("entityType must not be blank");
-            }
-            if (entityType.length() > MAX_STRING_LENGTH) {
-                throw new IllegalArgumentException(
-                        "entityType exceeds " + MAX_STRING_LENGTH + " characters: " + entityType.length());
-            }
-            if (entityId == null || entityId.isBlank()) {
-                throw new IllegalArgumentException("entityId must not be blank");
-            }
-            if (entityId.length() > MAX_STRING_LENGTH) {
-                throw new IllegalArgumentException(
-                        "entityId exceeds " + MAX_STRING_LENGTH + " characters: " + entityId.length());
-            }
+            requireNotBlank("actorId", actorId);
+            requireNotBlank("action", action);
+            requireNotBlank("entityType", entityType);
+            requireNotBlank("entityId", entityId);
             return new AuditEntry(
                     id != null ? id : UUID.randomUUID(),
                     timestamp != null ? timestamp : OffsetDateTime.now(),
                     actorId, action, entityType, entityId,
                     Collections.unmodifiableMap(changes),
                     Collections.unmodifiableMap(metadata));
+        }
+
+        private static void requireNotBlank(String name, String value) {
+            if (value == null || value.isBlank()) {
+                throw new IllegalArgumentException(name + " must not be blank");
+            }
+            if (value.length() > MAX_STRING_LENGTH) {
+                throw new IllegalArgumentException(
+                        name + " exceeds " + MAX_STRING_LENGTH + " characters: " + value.length());
+            }
         }
     }
 }

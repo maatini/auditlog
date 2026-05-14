@@ -48,3 +48,5 @@ Du agierst als erfahrener Softwarearchitekt. Befolge bei jeder Anfrage zwingend 
 - Liefere präzisen, sauberen Code ohne redundante Kommentare (z. B. keine Kommentare wie `// Getter und Setter`). 
 - Halte deine Antworten im Terminal prägnant und fokussiert.
 
+
+- **Demo ausführen:** `devbox run run:demo`
