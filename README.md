@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/license-MIT-%23blue" alt="MIT License"/>
 </p>
 
-<img src="auditlog.png" alt="Audit Log Overview" width="900"/>
+<img src="auditlog.svg" alt="Audit Log Overview" width="900"/>
 
 Leichtgewichtige Java-Bibliothek für PostgreSQL-basierte Audit-Logs.
 
