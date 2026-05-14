@@ -89,7 +89,7 @@ class PostgresAuditLoggerIntegrationTest {
     void cleanUp() throws Exception {
         try (Connection conn = dataSource.getConnection();
              Statement stmt = conn.createStatement()) {
-            stmt.execute("DELETE FROM audit_log");
+            stmt.execute("TRUNCATE audit_log");
         }
         logger.close();
     }
