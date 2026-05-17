@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 ## Projektkontext
-- **Projekt:** Leichtgewichtige Java Audit-Log Bibliothek für PostgreSQL.
-- **Tech-Stack:** Plain Java 21, JDBC/JDBI, PostgreSQL (Fokus auf `JSONB`), Maven.
+- **Projekt:** Leichtgewichtige Kotlin Audit-Log Bibliothek für PostgreSQL – volle Java-Interoperabilität.
+- **Tech-Stack:** Kotlin 2.1 + Java 21, JDBC, PostgreSQL (Fokus auf `JSONB`), Maven.
 - **Ziel:** Minimale externe Abhängigkeiten, asynchrone und nicht-blockierende Persistierung von Audit-Trails.
 
 ## Build- & Test-Befehle
@@ -18,6 +18,8 @@ Alle Build- und Test-Befehle werden **ausschließlich innerhalb der Devbox-Umgeb
 - **PSQL-Konsole:** `devbox run db:console`
 
 Die Devbox stellt Java 21 (Temurin), Maven und PostgreSQL 16 bereit. Die Umgebungsvariablen `PGHOST`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` und `PGPORT` werden automatisch gesetzt.
+
+**Wichtig bei Build-Fehlern:** Der Kotlin-Compiler (`kotlin-maven-plugin`) kompiliert alle Quellen (`src/main/kotlin/`). Die Test-Java-Dateien in `src/test/java/` werden mit javac kompiliert und referenzieren die Kotlin-Klassen. Keine `maven-compiler-plugin`-Konfiguration für main nötig.
 
 ---
 

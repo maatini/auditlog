@@ -1,6 +1,7 @@
 # Audit Log Core
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Kotlin-2.1-%237F52FF" alt="Kotlin 2.1"/>
   <img src="https://img.shields.io/badge/Java-21-%23ED8B00" alt="Java 21"/>
   <img src="https://img.shields.io/badge/Maven-3.9+-%23C71A36" alt="Maven 3.9+"/>
   <img src="https://img.shields.io/badge/PostgreSQL-14+-%234169E1" alt="PostgreSQL 14+"/>
@@ -11,7 +12,7 @@
 
 <img src="auditlog.svg" alt="Audit Log Overview" width="900"/>
 
-Leichtgewichtige Java-Bibliothek für PostgreSQL-basierte Audit-Logs.
+Leichtgewichtige Kotlin-Bibliothek für PostgreSQL-basierte Audit-Logs. Volle Java-Interoperabilität.
 
 **Minimale Abhängigkeiten:** PostgreSQL-Treiber, Jackson, SLF4J. Kein HikariCP-Zwang.
 
@@ -27,7 +28,7 @@ Leichtgewichtige Java-Bibliothek für PostgreSQL-basierte Audit-Logs.
 
 ## Voraussetzungen
 
-- Java 21+
+- Kotlin 2.1+ / Java 21+
 - PostgreSQL 14+ (mit JSONB-Unterstützung)
 - Tabelle via Flyway-Migration anlegen (siehe unten)
 
@@ -175,6 +176,7 @@ Die Bibliothek kommt ohne HikariCP aus, wenn du einen eigenen `DataSource` über
 
 ## Architektur
 
+- **Sprache**: Kotlin 2.1 mit JVM Target 21 – voll kompatibel zu Java
 - **Asynchrone Persistierung**: via `CompletableFuture.runAsync()` auf Virtual Threads (Java 21+)
 - **Backpressure**: Semaphore-gesteuerte Drosselung (BLOCK / FAST_FAIL) gegen Pool Starvation
 - **Connection-Pooling**: wahlweise HikariCP (über Factory) oder eigener Pool
