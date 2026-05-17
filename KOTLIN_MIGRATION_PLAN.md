@@ -194,3 +194,4 @@ Kotlin-Vorteile hier nutzen:
 ---
 
 *Erstellt auf Branch `kotlin-version` – 2026*
+*Letztes Update: Phase 0-7 abgeschlossen, alle 78 Tests grün, JaCoCo eingehalten, Java-Interop bestätigt*
