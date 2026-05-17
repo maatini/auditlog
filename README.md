@@ -1,5 +1,8 @@
 # Audit Log Core
 
+> **Hinweis:** Dies ist die stabile **Java**-Version.  
+> Die empfohlene **Kotlin 2.1+** Version findest du unter **[auditlog-kt](https://github.com/maatini/auditlog-kt)**.
+
 <p align="center">
   <img src="https://img.shields.io/badge/Java-21-%23ED8B00" alt="Java 21"/>
   <img src="https://img.shields.io/badge/Maven-3.9+-%23C71A36" alt="Maven 3.9+"/>
@@ -11,7 +14,7 @@
 
 <img src="auditlog.svg" alt="Audit Log Overview" width="900"/>
 
-Leichtgewichtige Java-Bibliothek für PostgreSQL-basierte Audit-Logs.
+Leichtgewichtige **Java**-Bibliothek für PostgreSQL-basierte Audit-Logs (Kotlin-Version siehe [auditlog-kt](https://github.com/maatini/auditlog-kt)).
 
 **Minimale Abhängigkeiten:** PostgreSQL-Treiber, Jackson, SLF4J. Kein HikariCP-Zwang.
 
