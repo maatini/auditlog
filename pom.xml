@@ -17,7 +17,7 @@
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <hikaricp.version>5.1.0</hikaricp.version>
+        <hikaricp.version>7.1.0</hikaricp.version>
         <postgresql.version>42.7.13</postgresql.version>
         <jackson.version>2.22.1</jackson.version>
         <flyway.version>12.6.1</flyway.version>
