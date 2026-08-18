@@ -92,7 +92,7 @@ jobs:
           cache: 'maven'
 
       - name: Cache OWASP Dependency-Check data
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.m2/repository/org/owasp/dependency-check-data
           key: owasp-dc-data-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
