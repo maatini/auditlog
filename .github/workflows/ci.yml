@@ -91,19 +91,27 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Cache OWASP Dependency-Check data
-        uses: actions/cache@v6
+      - name: Restore OWASP Dependency-Check data
+        uses: actions/cache/restore@v6
         with:
-          path: ~/.m2/repository/org/owasp/dependency-check-data
-          key: owasp-dc-data-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+          path: ~/.owasp-nvd
+          key: owasp-nvd-feed-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
-            owasp-dc-data-${{ runner.os }}-
+            owasp-nvd-feed-${{ runner.os }}-
 
       - name: OWASP Dependency Check
-        run: mvn dependency-check:check -B
+        run: mvn dependency-check:check -B -DdataDirectory=${HOME}/.owasp-nvd
 
       - name: Upload OWASP Report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: owasp-report
           path: target/dependency-check-report.html
+
+      - name: Save OWASP Dependency-Check data
+        if: success()
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.owasp-nvd
+          key: owasp-nvd-feed-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}

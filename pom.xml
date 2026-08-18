@@ -249,6 +249,8 @@
                 <version>12.2.2</version>
                 <configuration>
                     <failBuildOnCVSS>7</failBuildOnCVSS>
+                    <!-- Official OWASP NVD 2.0 feed; avoids unauthenticated NVD API 429s that leave an empty H2 store. -->
+                    <nvdDatafeedUrl>https://dependency-check.github.io/DependencyCheck_Builder/nvd_cache/nvdcve-{0}.json.gz</nvdDatafeedUrl>
                 </configuration>
                 <executions>
                     <execution>
