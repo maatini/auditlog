@@ -63,7 +63,7 @@ jobs:
         run: mvn test jacoco:report -B
 
       - name: Upload JaCoCo report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: jacoco-report
           path: target/site/jacoco/
@@ -72,7 +72,7 @@ jobs:
         run: mvn pitest:mutationCoverage -B
 
       - name: Upload PIT report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pit-report
           path: target/pit-reports/
@@ -104,7 +104,7 @@ jobs:
 
       - name: Upload OWASP Report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: owasp-report
           path: target/dependency-check-report.html
